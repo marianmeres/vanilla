@@ -1,6 +1,6 @@
 {
   "name": "@marianmeres/vanilla",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "exports": "./src/mod.ts",
   "compilerOptions": {
     "lib": [
