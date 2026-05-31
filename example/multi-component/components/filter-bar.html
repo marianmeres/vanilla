@@ -1,0 +1,64 @@
+<!-- Single-file component — see add-bar.html for the mechanism. -->
+<template id="tpl-filter">
+	<div class="flex gap-2 items-center text-xs">
+		<span data-ref="label" class="text-slate-400"></span>
+		<button
+			data-on="click:pick"
+			data-arg="all"
+			class="filter-btn px-2 py-1 rounded"
+		>
+			all
+		</button>
+		<button
+			data-on="click:pick"
+			data-arg="active"
+			class="filter-btn px-2 py-1 rounded"
+		>
+			active
+		</button>
+		<button
+			data-on="click:pick"
+			data-arg="done"
+			class="filter-btn px-2 py-1 rounded"
+		>
+			done
+		</button>
+	</div>
+</template>
+
+<script type="module">
+	import { createView, delegate, fromTemplate, refs } from "@marianmeres/vanilla";
+
+	/**
+	 * props:
+	 *   label?: string                 — value prop
+	 *   filter: Observable<string>     — observable prop (reactive data DOWN)
+	 *   onPick: (value: string) => void — callback prop (events UP)
+	 */
+	export function createFilterBar({ label = "", filter, onPick }) {
+		return createView((track) => {
+			const el = fromTemplate("tpl-filter");
+			const r = refs(el);
+			r.label.textContent = label; // value prop
+
+			// callback up. The action name "pick" is distinct from the other
+			// components' actions, so even if roots were nested, the delegated
+			// listeners would not collide.
+			track(delegate(el, { pick: (e, b) => onPick(b.dataset.arg) }));
+
+			// observable prop DOWN — re-highlight whenever the parent's filter
+			// changes. The component subscribes; the parent owns the value.
+			track(
+				filter.subscribe((f) => {
+					el.querySelectorAll(".filter-btn").forEach((b) => {
+						const on = b.dataset.arg === f;
+						b.className = "filter-btn px-2 py-1 rounded " +
+							(on ? "bg-slate-800 text-white" : "bg-slate-200");
+					});
+				}),
+			);
+
+			return { el };
+		});
+	}
+</script>

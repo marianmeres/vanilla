@@ -1,5 +1,9 @@
 # @marianmeres/vanilla
 
+[![JSR](https://jsr.io/badges/@marianmeres/vanilla)](https://jsr.io/@marianmeres/vanilla)
+[![NPM](https://img.shields.io/npm/v/@marianmeres/vanilla)](https://www.npmjs.com/package/@marianmeres/vanilla)
+[![License](https://img.shields.io/npm/l/@marianmeres/vanilla)](LICENSE)
+
 A tiny, **explicit** reactive DOM library for vanilla-JS prototyping. No virtual
 DOM, no compiler, no automatic dependency tracking — just observables you
 subscribe to explicitly, and views cloned from `<template>` elements.
@@ -119,25 +123,110 @@ document.body.appendChild(view.el);
 view.destroy(); // runs every tracked cleanup + removes el
 ```
 
-| Attribute   | Role                                                          |
-| ----------- | ------------------------------------------------------------- |
-| `data-ref`  | "I need this node in JS"                                      |
-| `data-bind` | "fill this from data" (`text` / `class` / `checked` / `html`) |
-| `data-on`   | "wire this event" (`event:action`)                            |
+| Attribute   | Role                                                 |
+| ----------- | ---------------------------------------------------- |
+| `data-ref`  | "I need this node in JS"                             |
+| `data-bind` | "fill this from data" (any DOM property + 3 aliases) |
+| `data-on`   | "wire this event" (`event:action`)                   |
 
-`text:` writes via `textContent` (XSS-safe). `html:` writes `innerHTML` — use it
-for **trusted content only**.
+`data-bind`'s kind is a **DOM property name**, so `value`, `disabled`, `hidden`,
+`checked`, `title`, `src`, `placeholder`, … all work with no special-casing
+(boolean properties coerce truthy/falsy values). Three aliases cover the
+irregular cases: `text`→`textContent`, `html`→`innerHTML`, `class`→`className`.
 
-## Example
+`text:` (textContent) is XSS-safe; `html:`/`innerHTML:` are unsafe sinks — use
+them for **trusted content only**.
 
-A full todo app (filtering, derived count, theming, batched + rAF effects) lives
-in [`example/index.html`](./example/index.html). Build and open it with:
+## Composition (components)
+
+A **component is just a factory that returns a view**. A parent composes children
+with `mount`, which appends the child and ties its `destroy()` to the parent's
+`track` (so the whole tree cleans up together). **Props** are the factory's single
+argument — three explicit kinds: _value_ (static config), _observable_ (reactive
+data **down**), and _callback_ (events **up**).
+
+```ts
+import { createView, delegate, fromTemplate, mount, refs } from "@marianmeres/vanilla";
+
+function createFilterBar({ label, filter, onPick }) { // props in
+	return createView((track) => {
+		const el = fromTemplate("tpl-filter");
+		refs(el).label.textContent = label; // value prop
+		track(delegate(el, { pick: (e, b) => onPick(b.dataset.arg) })); // callback up
+		track(filter.subscribe((f) => /* highlight */ {})); // observable down
+		return { el };
+	});
+}
+
+const app = createView((track) => {
+	const el = fromTemplate("tpl-app");
+	const r = refs(el);
+	mount(track, r.toolbar, createFilterBar, {
+		label: "Show:",
+		filter,
+		onPick: store.setFilter,
+	});
+	return { el };
+});
+```
+
+### Single-file components
+
+A component can live as **one `.html` file** holding both its `<template>` and its
+logic (an inline `<script type="module">`). `loadComponent(url)` adopts the
+templates and returns the inline module's exports. The host declares an **import
+map** once so the component can import the library by name (it's loaded from a
+`blob:` URL, which only resolves bare specifiers):
+
+```html
+<!-- host page -->
+<script type="importmap">
+{ "imports": { "@marianmeres/vanilla": "./dist/bundle.js" } }
+</script>
+<script type="module">
+	import {
+		createView,
+		fromTemplate,
+		loadComponent,
+		mount,
+		refs,
+	} from "@marianmeres/vanilla";
+	const { createFilterBar } = await loadComponent("./components/filter-bar.html");
+	// …then mount(track, slot, createFilterBar, props) inside a parent view
+</script>
+```
+
+```html
+<!-- components/filter-bar.html — markup + logic, co-located -->
+<template id="tpl-filter"> … </template>
+<script type="module">
+	import { createView, delegate, fromTemplate } from "@marianmeres/vanilla";
+	export function createFilterBar(props) {/* …returns a view… */}
+</script>
+```
+
+A static server is assumed (cross-file `import`/`fetch` don't work from `file://`).
+The runnable version is in
+[`example/multi-component/`](./example/multi-component/index.html).
+
+**How does `loadComponent` run a `.html` file's inline script?** See
+[docs/SINGLE_FILE_COMPONENTS.md](./docs/SINGLE_FILE_COMPONENTS.md) for the
+blob-URL + import-map mechanism, explained from the ground up.
+
+## Examples
+
+Build the bundle the examples import, then serve the repo and open a file over
+`http://` (the multi-component example fetches files, so `file://` won't work):
 
 ```sh
 deno task example:build   # bundles src/mod.ts -> example/dist/bundle.js
-# then open example/index.html in a browser
 deno task example:watch   # rebuild on change
 ```
+
+- [`example/todo.html`](./example/todo.html) — single-file todo app (filtering,
+  derived count, theming, batched + rAF effects).
+- [`example/multi-component/`](./example/multi-component/index.html) — the same
+  app split into **single-file components** with **props** down and callbacks up.
 
 ## API
 
@@ -151,6 +240,11 @@ deno task example:watch   # rebuild on change
 | `applyBindings(root, data)`      | Apply `data-bind` rules (data → DOM).                                |
 | `createView(mountFn)`            | Lifecycle boundary; provides `track`, returns a view with `destroy`. |
 | `delegate(root, handlers)`       | One delegated listener per event type; reads `data-on`.              |
+| `mount(track, slot, vf, props?)` | Mount a child view (or factory + props); tracks its `destroy`.       |
+| `loadTemplates(url)`             | Adopt another HTML file's `<template>`s into the document.           |
+| `loadComponent(url)`             | Load a single-file component; return its inline module's exports.    |
+
+See [API.md](./API.md) for the full reference (parameters, returns, examples).
 
 ## License
 

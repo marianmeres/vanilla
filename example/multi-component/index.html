@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>
+			@marianmeres/vanilla — multi-component (single-file components · props)
+		</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+
+		<!--
+			IMPORT MAP — the one host-level requirement for single-file components.
+			Each component's inline <script type="module"> imports the library by
+			this bare specifier. loadComponent() imports that script from a blob:
+			URL, and a blob URL can only resolve BARE specifiers (via this map) —
+			never relative ones. The host's own module below uses it too.
+
+			Path is relative to THIS page: ../dist/bundle.js  (run `deno task
+			example:build` first to produce it).
+		-->
+		<script type="importmap">
+		{
+			"imports": {
+				"@marianmeres/vanilla": "../dist/bundle.js"
+			}
+		}
+		</script>
+	</head>
+	<body class="bg-slate-50 min-h-screen" data-theme="light">
+		<div class="max-w-md mx-auto p-6">
+			<div class="flex items-center justify-between mb-1">
+				<h1 class="text-2xl font-bold text-slate-800">Todo</h1>
+				<button
+					id="theme-toggle"
+					class="text-xs px-2 py-1 rounded bg-slate-200"
+				>
+					toggle theme
+				</button>
+			</div>
+			<p class="text-xs text-slate-400 mb-4">
+				@marianmeres/vanilla · split into single-file components · props down,
+				callbacks up
+			</p>
+
+			<!--
+				The host "shell" is just slots. Each child view mounts into a
+				data-ref slot. The shell itself has no logic and no delegate.
+			-->
+			<template id="tpl-app">
+				<div class="space-y-3">
+					<div data-ref="addSlot"></div>
+					<div data-ref="filterSlot"></div>
+					<div data-ref="listSlot"></div>
+					<div data-ref="statsSlot"></div>
+				</div>
+			</template>
+
+			<div id="app"></div>
+		</div>
+
+		<!--
+			The app, written exactly how a consumer would. Build the bundle with
+			  deno task example:build
+			then serve the repo and open this file over http:// (single-file
+			components are fetched — file:// will not work).
+		-->
+		<script type="module">
+			import {
+				computed,
+				createView,
+				fromTemplate,
+				loadComponent,
+				mount,
+				observable,
+				refs,
+			} from "@marianmeres/vanilla";
+
+			/* ---- STORE: module-level reactive state; outlives any view. ---- */
+			let nextId = 3;
+			const todos = observable([
+				{ id: 1, text: "Split into components", done: true },
+				{ id: 2, text: "Pass props down, events up", done: false },
+			]);
+			const filter = observable("all");
+			const theme = observable("light");
+
+			// DERIVED (computed) — handed to <stats> as an observable prop.
+			const remaining = computed(
+				[todos],
+				() => todos.get().filter((t) => !t.done).length,
+			);
+
+			// The mutations the children invoke via callback props ("events up").
+			const actions = {
+				add(text) {
+					text = text.trim();
+					if (text) {
+						todos.update((l) => [
+							...l,
+							{ id: nextId++, text, done: false },
+						]);
+					}
+				},
+				toggle: (id) =>
+					todos.update((l) =>
+						l.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+					),
+				remove: (id) => todos.update((l) => l.filter((t) => t.id !== id)),
+				setFilter: (f) => filter.set(f),
+			};
+
+			/* ---- LOAD the single-file components (templates + factories). ---- */
+			const [
+				{ createAddBar },
+				{ createFilterBar },
+				{ createTodoList },
+				{ createStats },
+			] = await Promise.all([
+				loadComponent("./components/add-bar.html"),
+				loadComponent("./components/filter-bar.html"),
+				loadComponent("./components/todo-list.html"),
+				loadComponent("./components/stats.html"),
+			]);
+
+			/* ---- COMPOSE: the parent mounts children into its slots. ----
+			 * mount() appends the child's el AND tracks its destroy(), so the
+			 * parent's destroy() tears the whole tree down. Each call passes
+			 * props: value props, observable props (down), callbacks (up). */
+			const app = createView((track) => {
+				const el = fromTemplate("tpl-app");
+				const r = refs(el);
+
+				// value prop (placeholder) + callback up (onAdd)
+				mount(track, r.addSlot, createAddBar, {
+					placeholder: "What needs doing?",
+					onAdd: actions.add,
+				});
+
+				// value prop (label) + observable down (filter) + callback up (onPick)
+				mount(track, r.filterSlot, createFilterBar, {
+					label: "Show:",
+					filter,
+					onPick: actions.setFilter,
+				});
+
+				// observable props down (todos/filter/theme) + callbacks up
+				mount(track, r.listSlot, createTodoList, {
+					todos,
+					filter,
+					theme,
+					onToggle: actions.toggle,
+					onRemove: actions.remove,
+				});
+
+				// observable props down (a computed + the raw list)
+				mount(track, r.statsSlot, createStats, { remaining, todos });
+
+				return { el };
+			});
+
+			document.getElementById("app").appendChild(app.el);
+
+			/* ---- GLOBAL theme: page-level, intentionally NOT tracked.
+			 * It lives for the page lifetime, not a view's, so it needs no
+			 * cleanup (see DESIGN.md §5). The theme observable is ALSO passed as
+			 * a prop into <todo-list> so rows re-theme reactively. */
+			theme.subscribe((t) => {
+				document.body.dataset.theme = t;
+				document.body.className =
+					(t === "dark" ? "bg-slate-900" : "bg-slate-50") +
+					" min-h-screen";
+			});
+			document.getElementById("theme-toggle").onclick = () =>
+				theme.update((t) => (t === "light" ? "dark" : "light"));
+
+			// expose for console poking
+			Object.assign(globalThis, { todos, filter, theme, remaining, app });
+		</script>
+	</body>
+</html>

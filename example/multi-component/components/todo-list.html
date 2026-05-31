@@ -1,0 +1,101 @@
+<!--
+	Single-file component holding TWO templates: its own container (tpl-list)
+	and the per-row template (tpl-todo-item) it clones on every render.
+
+	Rows are rendered by WHOLESALE container re-render (innerHTML = "" + re-append)
+	— deliberately, per DESIGN.md §6. Rows are NOT their own views; that keeps
+	this in scope (no per-row lifecycle bookkeeping, no diffing).
+-->
+<template id="tpl-list">
+	<div>
+		<ul data-ref="list" class="space-y-1"></ul>
+		<p
+			data-ref="empty"
+			class="text-slate-400 text-sm text-center py-4 hidden"
+		>
+			Nothing here
+		</p>
+	</div>
+</template>
+
+<template id="tpl-todo-item">
+	<li
+		class="flex items-center gap-2 border rounded px-3 py-2"
+		data-bind="class:rowClass"
+	>
+		<input type="checkbox" data-on="change:toggle" data-bind="checked:done" />
+		<span data-bind="text:text;class:textClass" class="flex-1 text-sm"></span>
+		<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+	</li>
+</template>
+
+<script type="module">
+	import {
+		applyBindings,
+		createView,
+		delegate,
+		fromTemplate,
+		reactTo,
+		refs,
+	} from "@marianmeres/vanilla";
+
+	const rowTokens = (t) =>
+		t === "dark"
+			? "bg-slate-800 border-slate-700 text-slate-100"
+			: "bg-white border-slate-200 text-slate-800";
+
+	/**
+	 * props (all reactive data DOWN, plus callbacks UP):
+	 *   todos:  Observable<Todo[]>
+	 *   filter: Observable<string>
+	 *   theme:  Observable<"light"|"dark">
+	 *   onToggle: (id: number) => void
+	 *   onRemove: (id: number) => void
+	 */
+	export function createTodoList(
+		{ todos, filter, theme, onToggle, onRemove },
+	) {
+		return createView((track) => {
+			const el = fromTemplate("tpl-list");
+			const r = refs(el);
+
+			// callbacks up; row identity travels via data-id on the <li>.
+			track(
+				delegate(el, {
+					toggle: (e, t) => onToggle(+t.closest("[data-id]").dataset.id),
+					remove: (e, t) => onRemove(+t.closest("[data-id]").dataset.id),
+				}),
+			);
+
+			// ONE effect over THREE observable props — the visible dependency
+			// list. Fires once per flush even when several change together.
+			track(reactTo([todos, filter, theme], render));
+
+			function render() {
+				const f = filter.get();
+				const items = todos.get().filter((t) =>
+					f === "all" ? true : f === "active" ? !t.done : t.done
+				);
+				const rowBase = "flex items-center gap-2 border rounded px-3 py-2 " +
+					rowTokens(theme.get());
+
+				r.list.innerHTML = "";
+				items.forEach((t) => {
+					const li = fromTemplate("tpl-todo-item");
+					li.dataset.id = t.id;
+					applyBindings(li, {
+						done: t.done,
+						text: t.text,
+						rowClass: rowBase,
+						textClass: "flex-1 text-sm " +
+							(t.done ? "line-through opacity-50" : ""),
+					});
+					r.list.appendChild(li);
+				});
+				r.empty.classList.toggle("hidden", items.length !== 0);
+			}
+
+			return { el };
+		});
+	}
+</script>

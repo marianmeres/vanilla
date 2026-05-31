@@ -1,0 +1,32 @@
+<!-- Single-file component — see add-bar.html for the mechanism. -->
+<template id="tpl-stats">
+	<p class="text-[11px] text-slate-400"></p>
+</template>
+
+<script type="module">
+	import { createView, fromTemplate, reactTo } from "@marianmeres/vanilla";
+
+	/**
+	 * props (observable data DOWN):
+	 *   remaining: ReadonlyObservable<number> — a `computed`, passed straight in
+	 *   todos:     Observable<Todo[]>
+	 *
+	 * Subscribing to the computed directly means this only re-runs when the
+	 * derived number (or the list length) actually changes.
+	 *
+	 * Note: this component's root IS the <p>, so we write to `el` directly —
+	 * `refs()` collects DESCENDANTS with data-ref, not the root element itself.
+	 */
+	export function createStats({ remaining, todos }) {
+		return createView((track) => {
+			const el = fromTemplate("tpl-stats");
+			track(
+				reactTo([remaining, todos], () => {
+					el.textContent =
+						`${remaining.get()} of ${todos.get().length} remaining`;
+				}),
+			);
+			return { el };
+		});
+	}
+</script>

@@ -1,0 +1,58 @@
+<!--
+	A SINGLE-FILE COMPONENT: its markup (<template>) and its logic (the inline
+	<script type="module">) live together in one .html file. loadComponent()
+	adopts the template into the document and returns this module's exports.
+
+	The script imports the library by BARE specifier — required, because
+	loadComponent runs this module from a blob: URL, which can only resolve bare
+	specifiers through the host page's <script type="importmap">.
+-->
+<template id="tpl-add">
+	<div class="flex gap-2">
+		<input
+			data-ref="input"
+			class="flex-1 border rounded px-3 py-2 text-sm"
+		/>
+		<button
+			data-on="click:add"
+			class="bg-blue-600 text-white px-4 rounded text-sm"
+		>
+			Add
+		</button>
+	</div>
+</template>
+
+<script type="module">
+	import { createView, delegate, fromTemplate, refs } from "@marianmeres/vanilla";
+
+	/**
+	 * props:
+	 *   placeholder?: string         — value prop (static config)
+	 *   onAdd: (text: string) => void — callback prop (events UP to the parent)
+	 */
+	export function createAddBar({ placeholder = "", onAdd }) {
+		return createView((track) => {
+			const el = fromTemplate("tpl-add");
+			const r = refs(el);
+			r.input.placeholder = placeholder; // value prop
+
+			const submit = () => {
+				onAdd(r.input.value); // event up — the parent owns the state
+				r.input.value = "";
+				r.input.focus();
+			};
+
+			// action name "add" is local to this root; sibling components use
+			// different names, so delegated events never cross-fire.
+			track(delegate(el, { add: submit }));
+
+			const onKey = (e) => {
+				if (e.key === "Enter") submit();
+			};
+			r.input.addEventListener("keydown", onKey);
+			track(() => r.input.removeEventListener("keydown", onKey));
+
+			return { el };
+		});
+	}
+</script>

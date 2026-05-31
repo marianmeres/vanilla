@@ -17,6 +17,8 @@ It is explicitly **not** trying to be a React/Svelte/Solid competitor. It is opt
 - No build step required (it must work pasted into a `<script>` tag).
 - Being **read and understood in full in a few minutes**. The entire core should stay small enough that a newcomer can hold it in their head.
 
+> **Note on serving (updated).** "No build step" is preserved everywhere, but it is worth being explicit about **serving**: the simplest single-file prototype runs straight from `file://`. The moment an app splits across files — ES module `import` between files, or the component loaders in §4.6 — a **static HTTP server is assumed** (cross-file `import` and `fetch` are blocked on `file://` by the browser, not by us). This is an accepted, normal part of the multi-file workflow; it is still _no build_, just _serve_.
+
 ### 1.2 Scope boundaries
 
 In scope: reactive state, derived state, explicit subscriptions with cleanup, DOM rendering from HTML `<template>` elements, declarative event wiring, batched updates.
@@ -73,6 +75,8 @@ When adding a feature, if it requires reintroducing implicit tracking to feel er
 The author writes markup directly in the document (`<template>` elements) for IDE support: syntax highlighting, autocomplete, typo/lint warnings, and devtools inspectability. **The JS must never build markup by concatenating HTML strings**, and must never require an `h()`/hyperscript authoring surface for views.
 
 Rendering = find a `<template>`, clone its content, fill the holes. Holes and wiring are declared with `data-*` attributes inside the template.
+
+**Corollary — single-file components honor this _more_, not less (updated).** A "component" may live as one `.html` file holding both its `<template>`(s) **and** its logic in an inline `<script type="module">` (see §4.6). That is markup and behavior in the same HTML file, with full IDE support for both — the strongest form of "HTML lives in HTML", not a violation of it. The bright line is unchanged: the JS inside still never _builds_ markup from strings; it clones a `<template>`.
 
 ### P3 — Use the platform
 
@@ -169,7 +173,13 @@ Collects `[data-ref="name"]` nodes into `{ name: el }` for ergonomic access with
 
 #### `applyBindings(root, data)`
 
-Reads `data-bind="text:field; class:field; checked:field; html:field"` and writes the corresponding properties from a plain data object. One-directional (data → DOM). It is intentionally **dumb and wholesale** — it re-applies everything it's given; it does not diff. That's consistent with "container-level re-render is fine" (§1.2). `html:` is for trusted content only; everything else is set via `textContent`/properties and is therefore XSS-safe by construction.
+Reads `data-bind="kind:field; …"` and writes values from a plain data object onto the element. One-directional (data → DOM). It is intentionally **dumb and wholesale** — it re-applies everything it's given; it does not diff. That's consistent with "container-level re-render is fine" (§1.2).
+
+**`kind` is a DOM property name, set generically** (`el[kind] = value`), so `value`, `disabled`, `hidden`, `checked`, `title`, `src`, `placeholder`, … all work without enumerating them — fewer lines than a hand-maintained all-list, and no recurring "please add property X" pressure. Three aliases handle the cases where the kind ≠ the property name or carries a meaning: `text`→`textContent`, `html`→`innerHTML`, `class`→`className`. Boolean properties (`checked`, `disabled`, …) coerce truthy/falsy values via the DOM's IDL reflection, so no explicit `!!` is needed.
+
+**Why not a fully uniform attribute→property map?** Because HTML is irregular: `class`/`className`, `for`/`htmlFor`, `tabindex`/`tabIndex`; `text`/`html` are a _security_ choice (textContent vs innerHTML), not property names; and property-vs-attribute differ in meaning (live state vs default; boolean attributes set by presence). So the design picks **property by default + three aliases**, and leaves hyphenated attributes (`aria-*`, `data-*`) to `refs` + JS rather than pretending a single rule covers everything.
+
+**Security (updated).** `text:` (textContent) is XSS-safe and remains the right default for untrusted text. `html:`/`innerHTML:` are unsafe sinks — trusted content only. Because _any_ property can now be set, the "everything but `html:` is safe by construction" claim no longer holds verbatim (e.g. `innerHTML`, `outerHTML`, `srcdoc` are reachable); the convention stands — **route untrusted data through `text:`**.
 
 **Why declarative bindings at all.** They keep the _what-fills-what_ relationship in the HTML where the author can see it next to the markup (P2), rather than buried in imperative JS.
 
@@ -184,6 +194,44 @@ One native listener per event type on the view root. It reads `data-on="event:ac
 **Why delegation (option "a", chosen explicitly).** Three reasons, all principled: (1) it uses the platform's native bubbling (P3); (2) handlers survive container re-renders **for free** because the listener lives on the stable root, not on recreated child nodes — essential given we re-render containers wholesale; (3) the wiring stays declarative in the HTML via `data-on` (P2). The rejected alternative — binding handlers per-node after each clone — re-binds on every render and scatters wiring into JS.
 
 **Convention for parameters.** Row identity travels via `data-id` on the row element; handlers read it with `e.target.closest("[data-id]").dataset.id`. Keep this convention stable so templates and handlers stay decoupled.
+
+### 4.6 Composition — components, props, lifecycle
+
+**The component primitive already exists.** A "component" in this library is **a factory function that returns a view** (`createView`). Because every view is `{ el, destroy() }`, a parent composes children by creating them, appending their `.el`, and disposing them when it is disposed. No new concept — composition is plain JS. Three small helpers remove the only recurring sharp edges; everything they do, you could do by hand.
+
+#### `mount(track, slot, factoryOrView, props?)`
+
+Appends a child's `el` into a slot **and** registers the child's `destroy()` with the parent's `track` — in one line. Forgetting to track a child's `destroy()` is the exact P4 leak this prevents, so the helper earns its place (P5). It is overloaded: pass an already-created view, or a **factory plus its `props`** (instantiated for you). This is also the blessed channel for props.
+
+#### Props — a convention, not machinery
+
+A component factory takes one `props` object. There is **no props framework** — props are just the argument, which keeps them fully explicit (P1). Three documented kinds:
+
+- **Value props** — static config (`{ title: "Todos" }`).
+- **Observable props** — reactive data flowing **down**; the child subscribes (`track(props.todos.subscribe(...))`) and the **parent owns the value**.
+- **Callback props** — events flowing **up**; the child calls `props.onAdd(text)` and the parent mutates state.
+
+This "data down, events up" shape falls out of the existing primitives; we did not add anything to support it beyond letting `mount` pass the object through.
+
+#### `loadTemplates(url)` and `loadComponent(url)` — putting markup in its own file
+
+`loadTemplates(url)` fetches an HTML fragment and **adopts its `<template>`s into the document** (via `DOMParser` + `importNode`) so `fromTemplate(id)` finds them. Idempotent per URL.
+
+`loadComponent(url)` is the **single-file component** loader: one `.html` file holds both the `<template>`(s) and the logic (an inline `<script type="module">`). It adopts the templates and **returns the inline module's exports** (the factory). This is the strongest expression of P2 (§4.6 corollary): a component's markup and behavior co-located in one inspectable HTML file.
+
+**The one non-obvious mechanism (and why it's still "use the platform", P3).** The inline script is imported via a `blob:` URL so its real `export`s come back directly (no registry, no name strings). A `blob:` URL cannot resolve **relative** import specifiers, so the component imports the library by **bare specifier** (`from "@marianmeres/vanilla"`), resolved by an **import map** the host page declares once:
+
+```html
+<script type="importmap">
+{ "imports": { "@marianmeres/vanilla": "./dist/bundle.js" } }
+</script>
+```
+
+Import maps, `Blob`, `fetch`, and dynamic `import()` are all native — no compiler, no bundler, no string-built markup. The cost is an **async "load before mount"** rule: `fromTemplate` throws if its template isn't adopted yet, so `await loadComponent(...)` (top-level `await` is fine) must precede mounting.
+
+> A ground-up walkthrough of this mechanism (why `eval` won't do, what the blob URL buys, why the import map is required) lives in [SINGLE_FILE_COMPONENTS.md](./SINGLE_FILE_COMPONENTS.md).
+
+**Scope guard — this is composition, not a framework (P5, §1.2).** What is _in_: factories, `mount`, the two loaders, the props convention. What stays _out_, deliberately: props passed via HTML attributes (that is custom elements / a compiler), a component registry, lifecycle hooks beyond `destroy()`, and any specifier-rewriting magic. If a proposal needs one of those to feel good, raise it — it is probably out of scope.
 
 ---
 
@@ -207,6 +255,10 @@ These are **accepted**, not bugs to fix unless scope changes:
 - **Reference-equality only.** In-place mutation is invisible to the system by design; see the immutable-updates convention.
 - **No `flushSync` yet.** If deferred timing ever needs to be forced synchronous (e.g. read DOM immediately after a `set`), the sanctioned addition is a `flushSync()` that drains the microtask queue on demand. It is _not_ built yet; build it only when a real need appears, and keep it explicit (the caller asks for sync; we don't make `set` sync again).
 - **No two-way binding.** `data-bind` is data → DOM only. A future `data-model`-style two-way binding for inputs is a reasonable addition _if_ it stays explicit about which observable it targets and integrates with `track()`. Discuss before adding.
+- **Global template-id namespace.** `fromTemplate(id)` / the loaders all resolve against the one `document`. Templates from many component files share a single id space, so **prefix ids** (`tpl-filter`, `tpl-todo-item`) to avoid collisions. The loaders skip adopting an id already present.
+- **`delegate` action-name collisions across _nested_ roots.** Events bubble; a parent delegate root sees a child's `data-on` element (it passes `root.contains`). If a nested parent and child share an action _name_, both fire. Sibling components (the common case — §4.6) never collide; for nested delegate roots, use distinct action names or `stopPropagation`.
+- **`refs(root)` excludes the root element.** It collects `[data-ref]` **descendants**, not `root` itself (unlike `applyBindings`, which _does_ include the root). A single-element component whose root carries the ref should write to `el` directly. (Reconciling these two is a possible future tidy-up; for now they differ.)
+- **Single-file components require an import map + a server, and may trip strict CSP.** `loadComponent` imports the inline script from a `blob:` URL; that needs the host's import map (bare specifier) and a `script-src` permitting `blob:`. For prototyping (no strict CSP) this is a non-issue; under a locked-down CSP, prefer the two-file pattern (`loadTemplates` + a normal `import`).
 
 ---
 
@@ -235,3 +287,6 @@ If a proposed feature fails 1, 2, 4, or 7, **do not build it silently** — surf
 - **track** — the function a view uses to register a cleanup so `destroy()` can run it (§4.5, P4).
 - **delegation** — one native listener on a stable root that dispatches based on `data-on` (§4.5).
 - **flush** — the scheduler running all queued effects once (§4.1).
+- **component** — a factory function that takes `props` and returns a view; composed into a parent via `mount` (§4.6).
+- **props** — the single argument object passed to a component factory: value props, observable props (reactive data down), and callback props (events up) (§4.6).
+- **single-file component** — one `.html` file holding a component's `<template>`(s) and its inline `<script type="module">`, loaded via `loadComponent` (§4.6).

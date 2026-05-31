@@ -88,6 +88,11 @@ function refs(root) {
     });
     return map;
 }
+const BIND_ALIAS = {
+    text: "textContent",
+    html: "innerHTML",
+    class: "className"
+};
 function applyBindings(root, data) {
     const targets = [
         ...root.matches?.("[data-bind]") ? [
@@ -98,11 +103,9 @@ function applyBindings(root, data) {
     targets.forEach((el)=>{
         el.dataset.bind.split(";").forEach((rule)=>{
             const [kind, field] = rule.split(":").map((s)=>s.trim());
-            const val = data[field];
-            if (kind === "text") el.textContent = val;
-            else if (kind === "class") el.className = val;
-            else if (kind === "checked") el.checked = !!val;
-            else if (kind === "html") el.innerHTML = val;
+            if (!kind) return;
+            const prop = BIND_ALIAS[kind] ?? kind;
+            el[prop] = data[field];
         });
     });
 }
@@ -142,6 +145,55 @@ function delegate(root, handlers) {
     });
     return ()=>unsubs.forEach((u)=>u());
 }
+function mount(track, slot, vf, props) {
+    const view = typeof vf === "function" ? vf(props) : vf;
+    track(view.destroy);
+    if (view.el) slot.appendChild(view.el);
+    return view;
+}
+function adoptTemplates(doc) {
+    doc.querySelectorAll("template").forEach((t)=>{
+        if (t.id && !document.getElementById(t.id)) {
+            document.body.appendChild(document.importNode(t, true));
+        }
+    });
+}
+const _templateLoads = new Map();
+function loadTemplates(url) {
+    const abs = new URL(url, document.baseURI).href;
+    let p = _templateLoads.get(abs);
+    if (!p) {
+        p = fetch(abs).then((r)=>r.text()).then((html)=>adoptTemplates(new DOMParser().parseFromString(html, "text/html")));
+        _templateLoads.set(abs, p);
+    }
+    return p;
+}
+const _componentLoads = new Map();
+function loadComponent(url) {
+    const abs = new URL(url, document.baseURI).href;
+    let p = _componentLoads.get(abs);
+    if (!p) {
+        p = (async ()=>{
+            const html = await fetch(abs).then((r)=>r.text());
+            const doc = new DOMParser().parseFromString(html, "text/html");
+            adoptTemplates(doc);
+            const script = doc.querySelector('script[type="module"]');
+            if (!script) return {};
+            const blobUrl = URL.createObjectURL(new Blob([
+                script.textContent ?? ""
+            ], {
+                type: "text/javascript"
+            }));
+            try {
+                return await import(blobUrl);
+            } finally{
+                URL.revokeObjectURL(blobUrl);
+            }
+        })();
+        _componentLoads.set(abs, p);
+    }
+    return p;
+}
 export { observable as observable };
 export { reactTo as reactTo };
 export { computed as computed };
@@ -150,3 +202,6 @@ export { refs as refs };
 export { applyBindings as applyBindings };
 export { createView as createView };
 export { delegate as delegate };
+export { mount as mount };
+export { loadTemplates as loadTemplates };
+export { loadComponent as loadComponent };
