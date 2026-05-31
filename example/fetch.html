@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>@marianmeres/vanilla — Fetch (loading · error · abort)</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Fetch</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				@marianmeres/vanilla · observable state · computed loading flag ·
+				per-state templates · AbortController
+			</p>
+
+			<!--
+				The app shell: two buttons + a result region. The result region is
+				filled by cloning one of the per-state templates below (idle /
+				loading / error / result) — markup stays in HTML (no string building).
+			-->
+			<template id="tpl-app">
+				<div>
+					<div class="flex gap-2 mb-4">
+						<button
+							data-on="click:load"
+							data-arg="ok"
+							data-ref="btnOk"
+							class="bg-blue-600 text-white px-4 py-2 rounded text-sm"
+						>
+							Fetch random post
+						</button>
+						<button
+							data-on="click:load"
+							data-arg="bad"
+							data-ref="btnBad"
+							class="bg-slate-200 text-slate-700 px-4 py-2 rounded text-sm"
+						>
+							Trigger an error
+						</button>
+					</div>
+
+					<!-- aria-live so the loaded text / error is announced to AT. -->
+					<div
+						data-ref="result"
+						aria-live="polite"
+						class="min-h-[6rem] border rounded p-3 bg-white"
+					>
+					</div>
+				</div>
+			</template>
+
+			<template id="tpl-idle">
+				<p class="text-slate-400 text-sm">
+					Click a button to fetch a resource.
+				</p>
+			</template>
+
+			<template id="tpl-loading">
+				<div
+					role="status"
+					class="flex items-center gap-2 text-slate-500 text-sm"
+				>
+					<span
+						class="animate-spin inline-block h-4 w-4 rounded-full border-2 border-slate-300 border-t-slate-600"
+					></span>
+					Loading…
+				</div>
+			</template>
+
+			<template id="tpl-error">
+				<div class="text-sm">
+					<p class="font-semibold text-red-600 mb-1">Request failed</p>
+					<p
+						data-bind="text:message"
+						class="text-red-500 font-mono text-xs break-words"
+					>
+					</p>
+				</div>
+			</template>
+
+			<template id="tpl-result">
+				<pre
+					data-bind="text:body"
+					class="text-xs text-slate-700 whitespace-pre-wrap break-words"
+				></pre>
+			</template>
+
+			<div id="app"></div>
+		</div>
+
+		<!--
+			App logic, written exactly how a consumer would: import the built
+			library bundle and wire up the view. Build it with:
+			  deno task example:build      (or example:watch)
+		-->
+		<script type="module">
+			import {
+				applyBindings,
+				computed,
+				createView,
+				delegate,
+				fromTemplate,
+				observable,
+				reactTo,
+				refs,
+			} from "./dist/bundle.js";
+
+			/* ----------------------------------------------------------------
+			 * STATE — one observable holds the whole request lifecycle. We update
+			 * it immutably (a fresh object each set), so the reference-equality
+			 * guard always fans out. Status is an explicit enum, not booleans, so
+			 * "loading" and "error" can never both be true.
+			 * ---------------------------------------------------------------- */
+			const request = observable({ status: "idle", data: null, error: null });
+
+			// DERIVED: a loading flag for disabling controls. Subscribers fire only
+			// when the boolean actually flips, not on every request.set().
+			const isLoading = computed(
+				[request],
+				() => request.get().status === "loading",
+			);
+
+			/* ----------------------------------------------------------------
+			 * LOADER — the async side. One AbortController per call cancels any
+			 * in-flight request, so rapid clicks can't land a stale response
+			 * (last-click-wins). The aborted call exits quietly; only the live one
+			 * writes state.
+			 * ---------------------------------------------------------------- */
+			let controller = null;
+
+			async function doFetch(url) {
+				controller?.abort(); // cancel a previous in-flight request
+				controller = new AbortController();
+				const { signal } = controller;
+
+				request.set({ status: "loading", data: null, error: null });
+				try {
+					const res = await fetch(url, { signal });
+					if (!res.ok) {
+						throw new Error(
+							`HTTP ${res.status} — ${res.statusText || "request failed"}`,
+						);
+					}
+					const json = await res.json();
+					request.set({
+						status: "success",
+						data: JSON.stringify(json, null, 2),
+						error: null,
+					});
+				} catch (err) {
+					if (err?.name === "AbortError") return; // superseded by a newer request
+					request.set({
+						status: "error",
+						data: null,
+						error: String(err?.message ?? err),
+					});
+				}
+			}
+
+			/* ----------------------------------------------------------------
+			 * VIEW
+			 * ---------------------------------------------------------------- */
+			const app = createView((track) => {
+				const el = fromTemplate("tpl-app");
+				const r = refs(el);
+
+				// One delegated click listener; data-arg picks the endpoint.
+				track(
+					delegate(el, {
+						load: (_e, t) => {
+							const url = t.dataset.arg === "bad"
+								// a route that 404s -> exercises the error path
+								? "https://jsonplaceholder.typicode.com/no-such-endpoint-xyz"
+								// a real resource -> exercises the success path
+								: `https://jsonplaceholder.typicode.com/posts/${
+									1 + Math.floor(Math.random() * 100)
+								}`;
+							doFetch(url);
+						},
+					}),
+				);
+
+				// RESULT: re-render the region from the current status by cloning the
+				// matching template. Container-level re-render — fine here (P2/§1.2).
+				track(reactTo([request], renderResult));
+
+				function renderResult() {
+					const { status, data, error } = request.get();
+					r.result.setAttribute(
+						"aria-busy",
+						status === "loading" ? "true" : "false",
+					);
+					r.result.innerHTML = "";
+
+					let node;
+					if (status === "loading") {
+						node = fromTemplate("tpl-loading");
+					} else if (status === "error") {
+						node = fromTemplate("tpl-error");
+						applyBindings(node, { message: error });
+					} else if (status === "success") {
+						node = fromTemplate("tpl-result");
+						applyBindings(node, { body: data });
+					} else {
+						node = fromTemplate("tpl-idle");
+					}
+					r.result.appendChild(node);
+				}
+
+				// DISABLE controls while loading — fires only when the flag flips.
+				track(
+					isLoading.subscribe((loading) => {
+						[r.btnOk, r.btnBad].forEach((b) => {
+							b.disabled = loading;
+							b.classList.toggle("opacity-50", loading);
+							b.classList.toggle("cursor-not-allowed", loading);
+						});
+					}),
+				);
+
+				return { el };
+			});
+
+			document.getElementById("app").appendChild(app.el);
+
+			// expose for console poking
+			globalThis.request = request;
+			globalThis.doFetch = doFetch;
+			globalThis.app = app;
+		</script>
+	</body>
+</html>

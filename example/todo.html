@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>@marianmeres/vanilla — Todo (batched · reactTo · computed)</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen" data-theme="light">
+		<div class="max-w-md mx-auto p-6">
+			<div class="flex items-center justify-between mb-1">
+				<h1 class="text-2xl font-bold text-slate-800">Todo</h1>
+				<button
+					id="theme-toggle"
+					class="text-xs px-2 py-1 rounded bg-slate-200"
+				>
+					toggle theme
+				</button>
+			</div>
+			<p class="text-xs text-slate-400 mb-4">
+				@marianmeres/vanilla · batched (microtask) · reactTo · computed · global
+				theme
+			</p>
+
+			<template id="tpl-app">
+				<div>
+					<div class="flex gap-2 mb-3">
+						<input
+							data-ref="input"
+							class="flex-1 border rounded px-3 py-2 text-sm"
+							placeholder="What needs doing?"
+						/>
+						<button
+							data-on="click:add"
+							class="bg-blue-600 text-white px-4 rounded text-sm"
+						>
+							Add
+						</button>
+					</div>
+
+					<div class="flex gap-2 mb-3 text-xs">
+						<button
+							data-on="click:filter"
+							data-arg="all"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							all
+						</button>
+						<button
+							data-on="click:filter"
+							data-arg="active"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							active
+						</button>
+						<button
+							data-on="click:filter"
+							data-arg="done"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							done
+						</button>
+						<span
+							data-ref="count"
+							class="ml-auto self-center text-slate-400"
+						></span>
+					</div>
+
+					<ul data-ref="list" class="space-y-1"></ul>
+					<p
+						data-ref="empty"
+						class="text-slate-400 text-sm text-center py-4 hidden"
+					>
+						Nothing here
+					</p>
+
+					<p data-ref="stats" class="mt-3 text-[11px] text-slate-400"></p>
+				</div>
+			</template>
+
+			<template id="tpl-item">
+				<li
+					class="flex items-center gap-2 border rounded px-3 py-2"
+					data-bind="class:rowClass"
+				>
+					<input
+						type="checkbox"
+						data-on="change:toggle"
+						data-bind="checked:done"
+					/>
+					<span
+						data-bind="text:text;class:textClass"
+						class="flex-1 text-sm"
+					></span>
+					<button data-on="click:remove" class="text-red-400 text-xs">
+						✕
+					</button>
+				</li>
+			</template>
+
+			<div id="app"></div>
+		</div>
+
+		<!--
+			App logic, written exactly how a consumer would: import the built
+			library bundle and wire up the view. Build it with:
+			  deno task example:build      (or example:watch)
+		-->
+		<script type="module">
+			import {
+				applyBindings,
+				computed,
+				createView,
+				delegate,
+				fromTemplate,
+				observable,
+				reactTo,
+				refs,
+			} from "./dist/bundle.js";
+
+			/* GLOBAL state — lives module-level, outlives any view. */
+			const theme = observable("light");
+
+			/* STORE */
+			const store = (() => {
+				let nextId = 3;
+				const todos = observable([
+					{ id: 1, text: "Batch on microtask", done: true },
+					{ id: 2, text: "Derive with computed", done: false },
+				]);
+				const filter = observable("all");
+
+				// DERIVED, not stored: remaining count is a computed of todos.
+				const remaining = computed(
+					[todos],
+					() => todos.get().filter((t) => !t.done).length,
+				);
+
+				return {
+					todos,
+					filter,
+					remaining,
+					add(text) {
+						text = text.trim();
+						if (!text) return;
+						todos.update((l) => [
+							...l,
+							{ id: nextId++, text, done: false },
+						]);
+					},
+					toggle(id) {
+						todos.update((l) =>
+							l.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+						);
+					},
+					remove(id) {
+						todos.update((l) => l.filter((t) => t.id !== id));
+					},
+					setFilter(f) {
+						filter.set(f);
+					},
+					visible() {
+						const f = filter.get();
+						return todos
+							.get()
+							.filter((t) =>
+								f === "all" ? true : f === "active" ? !t.done : t.done
+							);
+					},
+				};
+			})();
+
+			/* THEME tokens derived from the global theme observable. */
+			function themeTokens(t) {
+				return t === "dark"
+					? {
+						row: "bg-slate-800 border-slate-700 text-slate-100",
+						page: "dark",
+					}
+					: {
+						row: "bg-white border-slate-200 text-slate-800",
+						page: "light",
+					};
+			}
+
+			/* THE VIEW */
+			const todoApp = createView((track) => {
+				const el = fromTemplate("tpl-app");
+				const r = refs(el);
+
+				track(
+					delegate(el, {
+						add: () => {
+							store.add(r.input.value);
+							r.input.value = "";
+							r.input.focus();
+						},
+						filter: (e, t) => store.setFilter(t.dataset.arg),
+						toggle: (e, t) =>
+							store.toggle(+t.closest("[data-id]").dataset.id),
+						remove: (e, t) =>
+							store.remove(+t.closest("[data-id]").dataset.id),
+					}),
+				);
+
+				const onKey = (e) => {
+					if (e.key === "Enter") {
+						store.add(r.input.value);
+						r.input.value = "";
+					}
+				};
+				r.input.addEventListener("keydown", onKey);
+				track(() => r.input.removeEventListener("keydown", onKey));
+
+				// LIST depends on todos + filter + theme (rows are themed).
+				// reactTo = one render fn, one cleanup, fires once per flush.
+				track(reactTo([store.todos, store.filter, theme], renderList));
+
+				function renderList() {
+					const items = store.visible();
+					const tok = themeTokens(theme.get());
+					r.list.innerHTML = "";
+					items.forEach((t) => {
+						const li = fromTemplate("tpl-item");
+						li.dataset.id = t.id;
+						applyBindings(li, {
+							done: t.done,
+							text: t.text,
+							rowClass:
+								"flex items-center gap-2 border rounded px-3 py-2 " +
+								tok.row,
+							textClass: "flex-1 text-sm " +
+								(t.done ? "line-through opacity-50" : ""),
+						});
+						r.list.appendChild(li);
+					});
+					r.empty.classList.toggle("hidden", items.length !== 0);
+				}
+
+				// COUNT subscribes to the computed `remaining` — not to todos directly.
+				// It only fires when the derived number actually changes.
+				track(
+					store.remaining.subscribe((n) => {
+						r.count.textContent = n + " left";
+					}),
+				);
+
+				// FILTER highlight: only re-runs when filter changes.
+				track(
+					store.filter.subscribe((f) => {
+						el.querySelectorAll(".filter-btn").forEach((b) => {
+							const active = b.dataset.arg === f;
+							b.className = "filter-btn px-2 py-1 rounded " +
+								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+						});
+					}),
+				);
+
+				// A frame-batched effect: a noisy "render counter" demonstrating rAF.
+				// Even if many sets land in one frame, this updates at most once/frame.
+				let renders = 0;
+				track(
+					reactTo(
+						[store.todos, store.filter, theme],
+						() => {
+							r.stats.textContent = `rAF stat tick #${++renders}`;
+						},
+						{ scheduler: "raf" },
+					),
+				);
+
+				return { el };
+			});
+
+			document.getElementById("app").appendChild(todoApp.el);
+
+			/* GLOBAL theme: page reacts too (separate view-less subscription).
+			 * Note: this one is module-level and intentionally not tracked by a
+			 * view — it lives for the page lifetime. */
+			theme.subscribe((t) => {
+				document.body.dataset.theme = themeTokens(t).page;
+			});
+			document.getElementById("theme-toggle").onclick = () =>
+				theme.update((t) => (t === "light" ? "dark" : "light"));
+
+			// expose for console poking
+			globalThis.todoApp = todoApp;
+			globalThis.store = store;
+			globalThis.theme = theme;
+		</script>
+	</body>
+</html>

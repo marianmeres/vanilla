@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Todo — templates + data-* + explicit observable</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				HTML templates · data-* bindings · explicit subscribe · delegated events
+			</p>
+
+			<!-- ============================================================
+			VIEW lives in the HTML. The IDE lints it, autocompletes it,
+			flags typos. The JS never builds markup with strings.
+			Holes + wiring are declared via data-* attributes.
+			============================================================ -->
+
+			<!-- the app shell -->
+			<template id="tpl-app">
+				<div>
+					<div class="flex gap-2 mb-3">
+						<input
+							data-ref="input"
+							class="flex-1 border rounded px-3 py-2 text-sm"
+							placeholder="What needs doing?"
+						/>
+						<button
+							data-on="click:add"
+							class="bg-blue-600 text-white px-4 rounded text-sm"
+						>
+							Add
+						</button>
+					</div>
+
+					<div class="flex gap-2 mb-3 text-xs">
+						<button
+							data-on="click:filter"
+							data-arg="all"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							all
+						</button>
+						<button
+							data-on="click:filter"
+							data-arg="active"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							active
+						</button>
+						<button
+							data-on="click:filter"
+							data-arg="done"
+							class="filter-btn px-2 py-1 rounded"
+						>
+							done
+						</button>
+						<span
+							data-ref="count"
+							class="ml-auto text-slate-400 self-center"
+						></span>
+					</div>
+
+					<ul data-ref="list" class="space-y-1"></ul>
+					<p
+						data-ref="empty"
+						class="text-slate-400 text-sm text-center py-4 hidden"
+					>
+						Nothing here
+					</p>
+				</div>
+			</template>
+
+			<!-- one todo row -->
+			<template id="tpl-item">
+				<li
+					class="flex items-center gap-2 bg-white border rounded px-3 py-2"
+				>
+					<input
+						type="checkbox"
+						data-on="change:toggle"
+						data-bind="checked:done"
+					/>
+					<span
+						data-bind="text:text;class:textClass"
+						class="flex-1 text-sm"
+					></span>
+					<button data-on="click:remove" class="text-red-400 text-xs">
+						✕
+					</button>
+				</li>
+			</template>
+
+			<div id="app"></div>
+		</div>
+
+		<script>
+			/* ================================================================
+			 * 1. observable — signal's shape, but EXPLICIT. No auto-tracking,
+			 *    no `active` global, no leaked dependency graph. You subscribe
+			 *    by hand and get an unsubscribe back.
+			 * ================================================================ */
+			function observable(value) {
+				const subs = new Set();
+				return {
+					get: () => value,
+					set(v) {
+						if (v === value) return; // equality guard
+						value = v;
+						[...subs].forEach((fn) => fn(value));
+					},
+					update(fn) {
+						this.set(fn(value));
+					},
+					subscribe(fn, { immediate = true } = {}) {
+						subs.add(fn);
+						if (immediate) fn(value);
+						return () => subs.delete(fn); // cleanup handle (Fact 3)
+					},
+				};
+			}
+
+			/* ================================================================
+			 * 2. template / binding helpers
+			 * ================================================================ */
+			function fromTemplate(id) {
+				return document
+					.getElementById(id)
+					.content.firstElementChild.cloneNode(true);
+			}
+
+			// resolve data-ref="name" nodes into { name: el } for easy access
+			function refs(root) {
+				const map = {};
+				root.querySelectorAll("[data-ref]").forEach(
+					(el) => (map[el.dataset.ref] = el),
+				);
+				return map;
+			}
+
+			// apply data-bind="text:field; class:field; checked:field" against a data object
+			function applyBindings(root, data) {
+				root.querySelectorAll("[data-bind]").forEach((el) => {
+					el.dataset.bind.split(";").forEach((rule) => {
+						const [kind, field] = rule
+							.split(":")
+							.map((s) => s.trim());
+						const val = data[field];
+						if (kind === "text") el.textContent = val;
+						else if (kind === "class") el.className = val;
+						else if (kind === "checked") el.checked = !!val;
+						else if (kind === "html") el.innerHTML = val; // trusted only
+					});
+				});
+			}
+
+			/* ================================================================
+			 * 3. createView — owns a set of subscriptions, disposes them all
+			 *    on destroy(). `track()` is how a view registers cleanup.
+			 * ================================================================ */
+			function createView(mountFn) {
+				const cleanups = [];
+				const track = (unsub) => (cleanups.push(unsub), unsub);
+				const api = mountFn(track) || {};
+				return {
+					...api,
+					destroy() {
+						cleanups.forEach((fn) => fn());
+						cleanups.length = 0;
+						api.el?.remove();
+					},
+				};
+			}
+
+			/* ================================================================
+			 * 4. delegated events — ONE listener per type on the view root.
+			 *    Reads data-on="event:action" and optional data-arg / data-id.
+			 *    Survives re-renders for free; no per-node binding.
+			 * ================================================================ */
+			function delegate(root, handlers) {
+				const seen = new Set();
+				root.querySelectorAll("[data-on]").forEach((el) =>
+					el.dataset.on
+						.split(";")
+						.forEach((r) => seen.add(r.split(":")[0].trim()))
+				);
+				const unsubs = [];
+				seen.forEach((evt) => {
+					const listener = (e) => {
+						const el = e.target.closest("[data-on]");
+						if (!el || !root.contains(el)) return;
+						el.dataset.on.split(";").forEach((rule) => {
+							const [type, action] = rule
+								.split(":")
+								.map((s) => s.trim());
+							if (type !== evt) return;
+							const fn = handlers[action];
+							if (fn) fn(e, el);
+						});
+					};
+					root.addEventListener(evt, listener);
+					unsubs.push(() => root.removeEventListener(evt, listener));
+				});
+				return () => unsubs.forEach((u) => u()); // cleanup handle
+			}
+
+			/* ================================================================
+			 * 5. STORE — plain explicit observables. You mutate via methods.
+			 * ================================================================ */
+			const store = (() => {
+				let nextId = 3;
+				const todos = observable([
+					{ id: 1, text: "Write templates in HTML", done: true },
+					{ id: 2, text: "Subscribe explicitly", done: false },
+				]);
+				const filter = observable("all");
+				return {
+					todos,
+					filter,
+					add(text) {
+						text = text.trim();
+						if (!text) return;
+						todos.update((l) => [
+							...l,
+							{ id: nextId++, text, done: false },
+						]);
+					},
+					toggle(id) {
+						todos.update((l) =>
+							l.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+						);
+					},
+					remove(id) {
+						todos.update((l) => l.filter((t) => t.id !== id));
+					},
+					setFilter(f) {
+						filter.set(f);
+					},
+					visible() {
+						const f = filter.get();
+						return todos
+							.get()
+							.filter((t) =>
+								f === "all" ? true : f === "active" ? !t.done : t.done
+							);
+					},
+					remaining() {
+						return todos.get().filter((t) => !t.done).length;
+					},
+				};
+			})();
+
+			/* ================================================================
+			 * 6. THE VIEW — clone shell, wire delegated events once, then
+			 *    EXPLICITLY bind render fns to store.subscribe(). You can read
+			 *    these track(...subscribe...) lines and know exactly what
+			 *    re-runs when, and that it gets cleaned up.
+			 * ================================================================ */
+			const todoApp = createView((track) => {
+				const el = fromTemplate("tpl-app");
+				const r = refs(el);
+
+				// --- events (delegated, bound once) ---
+				track(
+					delegate(el, {
+						add: () => {
+							store.add(r.input.value);
+							r.input.value = "";
+							r.input.focus();
+						},
+						filter: (e, t) => store.setFilter(t.dataset.arg),
+						toggle: (e, t) =>
+							store.toggle(+t.closest("[data-id]").dataset.id),
+						remove: (e, t) =>
+							store.remove(+t.closest("[data-id]").dataset.id),
+					}),
+				);
+				// Enter to add (input isn't re-rendered, so a direct listener is fine + cleaned up)
+				const onKey = (e) => {
+					if (e.key === "Enter") {
+						store.add(r.input.value);
+						r.input.value = "";
+					}
+				};
+				r.input.addEventListener("keydown", onKey);
+				track(() => r.input.removeEventListener("keydown", onKey));
+
+				// --- explicit reactive bindings (render fn <-> subscribe) ---
+
+				// list: container-level re-render of <ul> from the tpl-item template
+				track(store.todos.subscribe(renderList));
+				track(store.filter.subscribe(renderList));
+
+				function renderList() {
+					const items = store.visible();
+					r.list.innerHTML = "";
+					items.forEach((t) => {
+						const li = fromTemplate("tpl-item");
+						li.dataset.id = t.id; // identity for delegation
+						applyBindings(li, {
+							done: t.done,
+							text: t.text,
+							textClass: "flex-1 text-sm " +
+								(t.done ? "line-through text-slate-400" : ""),
+						});
+						r.list.appendChild(li);
+					});
+					r.empty.classList.toggle("hidden", items.length !== 0);
+				}
+
+				// count: re-runs only when todos change
+				track(
+					store.todos.subscribe(() => {
+						r.count.textContent = store.remaining() + " left";
+					}),
+				);
+
+				// filter button highlight: re-runs only when filter changes
+				track(
+					store.filter.subscribe((f) => {
+						el.querySelectorAll(".filter-btn").forEach((b) => {
+							const active = b.dataset.arg === f;
+							b.className = "filter-btn px-2 py-1 rounded " +
+								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+						});
+					}),
+				);
+
+				return { el };
+			});
+
+			document.getElementById("app").appendChild(todoApp.el);
+
+			/* Try in the console:  todoApp.destroy()
+			 * — removes the node AND tears down every subscription + listener. */
+			window.todoApp = todoApp;
+		</script>
+	</body>
+</html>

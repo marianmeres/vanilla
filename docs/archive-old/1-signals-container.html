@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Approach 1 — Signals + Container Re-render</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				Approach 1: signals + dirty-container re-render
+			</p>
+			<div id="app"></div>
+		</div>
+
+		<script>
+			/* ------------------------------------------------------------------ *
+			 * Reactivity core (~25 lines)
+			 *  - signal(): a value with a subscriber set, auto-tracked on read
+			 *  - effect(): runs fn, records which signals it read, re-runs on change
+			 * ------------------------------------------------------------------ */
+			let active = null;
+
+			function signal(value) {
+				const subs = new Set();
+				return {
+					get() {
+						if (active) subs.add(active);
+						return value;
+					},
+					set(v) {
+						value = v;
+						[...subs].forEach((fn) => fn());
+					},
+					update(fn) {
+						this.set(fn(value));
+					},
+				};
+			}
+
+			function effect(fn) {
+				const run = () => {
+					active = run;
+					try {
+						fn();
+					} finally {
+						active = null;
+					}
+				};
+				run();
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * App state
+			 * ------------------------------------------------------------------ */
+			const todos = signal([
+				{ id: 1, text: "Study signals", done: true },
+				{ id: 2, text: "Compare approaches", done: false },
+			]);
+			const filter = signal("all"); // all | active | done
+			let nextId = 3;
+
+			/* ------------------------------------------------------------------ *
+			 * Actions
+			 * ------------------------------------------------------------------ */
+			function addTodo(text) {
+				text = text.trim();
+				if (!text) return;
+				todos.update((list) => [
+					...list,
+					{ id: nextId++, text, done: false },
+				]);
+			}
+			function toggle(id) {
+				todos.update((list) =>
+					list.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+				);
+			}
+			function remove(id) {
+				todos.update((list) => list.filter((t) => t.id !== id));
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * Render: rebuild the whole container's innerHTML on any state change.
+			 * Event handling via delegation at the container root (survives swaps).
+			 * ------------------------------------------------------------------ */
+			const app = document.getElementById("app");
+
+			function visibleTodos() {
+				const f = filter.get();
+				return todos
+					.get()
+					.filter((t) =>
+						f === "all" ? true : f === "active" ? !t.done : t.done
+					);
+			}
+
+			effect(() => {
+				const list = visibleTodos();
+				const active = filter.get();
+				const remaining = todos.get().filter((t) => !t.done).length;
+
+				app.innerHTML = `
+    <div class="flex gap-2 mb-3">
+      <input id="new" class="flex-1 border rounded px-3 py-2 text-sm" placeholder="What needs doing?" />
+      <button data-add class="bg-blue-600 text-white px-4 rounded text-sm">Add</button>
+    </div>
+    <div class="flex gap-2 mb-3 text-xs">
+      ${
+					["all", "active", "done"]
+						.map(
+							(f) => `
+        <button data-filter="${f}"
+          class="px-2 py-1 rounded ${
+								active === f ? "bg-slate-800 text-white" : "bg-slate-200"
+							}">
+          ${f}
+        </button>`,
+						)
+						.join("")
+				}
+      <span class="ml-auto text-slate-400 self-center">${remaining} left</span>
+    </div>
+    <ul class="space-y-1">
+      ${
+					list
+						.map(
+							(t) => `
+        <li class="flex items-center gap-2 bg-white border rounded px-3 py-2">
+          <input type="checkbox" data-toggle="${t.id}" ${t.done ? "checked" : ""} />
+          <span class="flex-1 text-sm ${
+								t.done ? "line-through text-slate-400" : ""
+							}">${t.text}</span>
+          <button data-remove="${t.id}" class="text-red-400 text-xs">✕</button>
+        </li>`,
+						)
+						.join("")
+				}
+      ${
+					list.length === 0
+						? '<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>'
+						: ""
+				}
+    </ul>
+  `;
+			});
+
+			/* Delegated events — bound once, not re-bound on every render. */
+			app.addEventListener("click", (e) => {
+				if (e.target.dataset.add !== undefined) {
+					const input = app.querySelector("#new");
+					addTodo(input.value); // input value read before re-render wipes it
+				}
+				if (e.target.dataset.filter) {
+					filter.set(e.target.dataset.filter);
+				}
+				if (e.target.dataset.remove) remove(+e.target.dataset.remove);
+			});
+			app.addEventListener("change", (e) => {
+				if (e.target.dataset.toggle) toggle(+e.target.dataset.toggle);
+			});
+			app.addEventListener("keydown", (e) => {
+				if (e.target.id === "new" && e.key === "Enter") {
+					addTodo(e.target.value);
+				}
+			});
+		</script>
+	</body>
+</html>

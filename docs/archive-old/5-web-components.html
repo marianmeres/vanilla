@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Approach 5 — Web Components + Signals</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				Approach 5: custom elements + shared signals (light DOM, so Tailwind
+				works)
+			</p>
+			<todo-app></todo-app>
+		</div>
+
+		<script>
+			/* ------------------------------------------------------------------ *
+			 * Signals (same primitive as Approach 1) shared across components.
+			 * ------------------------------------------------------------------ */
+			let active = null;
+			function signal(value) {
+				const subs = new Set();
+				return {
+					get() {
+						if (active) subs.add(active);
+						return value;
+					},
+					set(v) {
+						value = v;
+						[...subs].forEach((fn) => fn());
+					},
+					update(fn) {
+						this.set(fn(value));
+					},
+				};
+			}
+			function effect(fn) {
+				const run = () => {
+					active = run;
+					try {
+						fn();
+					} finally {
+						active = null;
+					}
+				};
+				run();
+				return run;
+			}
+
+			/* Shared app state lives outside the components (a tiny store). */
+			const store = {
+				todos: signal([
+					{ id: 1, text: "Define a custom element", done: false },
+					{ id: 2, text: "Render in light DOM", done: true },
+				]),
+				filter: signal("all"),
+				nextId: 3,
+				add(text) {
+					text = text.trim();
+					if (!text) return;
+					this.todos.update((l) => [
+						...l,
+						{ id: this.nextId++, text, done: false },
+					]);
+				},
+				toggle(id) {
+					this.todos.update((l) =>
+						l.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+					);
+				},
+				remove(id) {
+					this.todos.update((l) => l.filter((t) => t.id !== id));
+				},
+			};
+
+			/* ------------------------------------------------------------------ *
+			 * Base class: a custom element that re-renders via an effect.
+			 * We render into light DOM (this.innerHTML) so the Tailwind CDN
+			 * stylesheet applies — shadow DOM would isolate styles.
+			 * ------------------------------------------------------------------ */
+			class ReactiveElement extends HTMLElement {
+				connectedCallback() {
+					this._effect = effect(() => this.render());
+				}
+				render() {} // override
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * <todo-input> — adds items
+			 * ------------------------------------------------------------------ */
+			class TodoInput extends ReactiveElement {
+				connectedCallback() {
+					this.innerHTML = `
+      <div class="flex gap-2 mb-3">
+        <input class="flex-1 border rounded px-3 py-2 text-sm" placeholder="What needs doing?" />
+        <button class="bg-blue-600 text-white px-4 rounded text-sm">Add</button>
+      </div>`;
+					const input = this.querySelector("input");
+					const btn = this.querySelector("button");
+					const submit = () => {
+						store.add(input.value);
+						input.value = "";
+						input.focus();
+					};
+					btn.onclick = submit;
+					input.addEventListener("keydown", (e) => {
+						if (e.key === "Enter") submit();
+					});
+				}
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * <todo-filters> — filter buttons + remaining count (reactive)
+			 * ------------------------------------------------------------------ */
+			class TodoFilters extends ReactiveElement {
+				render() {
+					const active = store.filter.get();
+					const left = store.todos
+						.get()
+						.filter((t) => !t.done).length;
+					this.innerHTML = `
+      <div class="flex gap-2 mb-3 text-xs">
+        ${
+						["all", "active", "done"]
+							.map(
+								(f) => `
+          <button data-f="${f}" class="px-2 py-1 rounded ${
+									active === f
+										? "bg-slate-800 text-white"
+										: "bg-slate-200"
+								}">${f}</button>
+        `,
+							)
+							.join("")
+					}
+        <span class="ml-auto text-slate-400 self-center">${left} left</span>
+      </div>`;
+					this.querySelectorAll("button").forEach(
+						(b) => (b.onclick = () => store.filter.set(b.dataset.f)),
+					);
+				}
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * <todo-list> — the list, reactive to todos + filter
+			 * ------------------------------------------------------------------ */
+			class TodoList extends ReactiveElement {
+				render() {
+					const f = store.filter.get();
+					const list = store.todos
+						.get()
+						.filter((t) =>
+							f === "all" ? true : f === "active" ? !t.done : t.done
+						);
+					this.innerHTML = `
+      <ul class="space-y-1">
+        ${
+						list
+							.map(
+								(t) => `
+          <li class="flex items-center gap-2 bg-white border rounded px-3 py-2">
+            <input type="checkbox" data-toggle="${t.id}" ${t.done ? "checked" : ""} />
+            <span class="flex-1 text-sm ${
+									t.done ? "line-through text-slate-400" : ""
+								}">${t.text}</span>
+            <button data-remove="${t.id}" class="text-red-400 text-xs">✕</button>
+          </li>`,
+							)
+							.join("")
+					}
+        ${
+						list.length === 0
+							? '<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>'
+							: ""
+					}
+      </ul>`;
+					this.querySelectorAll("[data-toggle]").forEach(
+						(el) => (el.onchange = () => store.toggle(+el.dataset.toggle)),
+					);
+					this.querySelectorAll("[data-remove]").forEach(
+						(el) => (el.onclick = () => store.remove(+el.dataset.remove)),
+					);
+				}
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * <todo-app> — composes the three components
+			 * ------------------------------------------------------------------ */
+			class TodoApp extends HTMLElement {
+				connectedCallback() {
+					this.innerHTML =
+						`<todo-input></todo-input><todo-filters></todo-filters><todo-list></todo-list>`;
+				}
+			}
+
+			customElements.define("todo-input", TodoInput);
+			customElements.define("todo-filters", TodoFilters);
+			customElements.define("todo-list", TodoList);
+			customElements.define("todo-app", TodoApp);
+		</script>
+	</body>
+</html>

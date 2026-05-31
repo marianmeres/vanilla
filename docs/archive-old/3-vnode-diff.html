@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Approach 3 — Hyperscript + VNode Diff</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				Approach 3: <code>h()</code> vnodes + naive keyed diff (preserves focus)
+			</p>
+			<div id="app"></div>
+		</div>
+
+		<script>
+			/* ------------------------------------------------------------------ *
+			 * Hyperscript: h(tag, props, ...children) → vnode
+			 * Children may be vnodes, strings, numbers, or arrays.
+			 * ------------------------------------------------------------------ */
+			function h(tag, props, ...children) {
+				return {
+					tag,
+					props: props || {},
+					children: children
+						.flat()
+						.filter((c) => c != null && c !== false),
+				};
+			}
+
+			/* Create a real DOM node from a vnode. */
+			function createEl(vnode) {
+				if (typeof vnode === "string" || typeof vnode === "number") {
+					return document.createTextNode(String(vnode));
+				}
+				const el = document.createElement(vnode.tag);
+				applyProps(el, {}, vnode.props);
+				vnode.children.forEach((c) => el.appendChild(createEl(c)));
+				vnode._el = el;
+				return el;
+			}
+
+			function applyProps(el, oldProps, newProps) {
+				// remove gone props
+				for (const k in oldProps) {
+					if (!(k in newProps)) {
+						if (k.startsWith("on")) el[k.toLowerCase()] = null;
+						else el.removeAttribute(k);
+					}
+				}
+				// set new/changed props
+				for (const k in newProps) {
+					const v = newProps[k];
+					if (k.startsWith("on")) {
+						el[k.toLowerCase()] = v; // event listener
+					} else if (k === "checked" || k === "value") {
+						el[k] = v; // live DOM properties
+					} else if (oldProps[k] !== v) {
+						el.setAttribute(k, v);
+					}
+				}
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * Naive keyed diff between two vnode trees, patching real DOM.
+			 * Keys come from props.key; without keys we diff by index.
+			 * ------------------------------------------------------------------ */
+			function diff(parent, oldV, newV, index = 0) {
+				const existing = parent.childNodes[index];
+
+				if (oldV == null) {
+					// mount
+					parent.appendChild(createEl(newV));
+					return;
+				}
+				if (newV == null) {
+					// unmount
+					if (existing) parent.removeChild(existing);
+					return;
+				}
+				if (changed(oldV, newV)) {
+					// replace
+					parent.replaceChild(createEl(newV), existing);
+					return;
+				}
+				if (typeof newV === "string" || typeof newV === "number") {
+					return; // same text
+				}
+
+				// same tag → patch props + recurse on children (keyed)
+				applyProps(existing, oldV.props, newV.props);
+				newV._el = existing;
+				diffChildren(existing, oldV.children, newV.children);
+			}
+
+			function changed(a, b) {
+				return (
+					typeof a !== typeof b ||
+					((typeof a === "string" || typeof a === "number") &&
+						a !== b) ||
+					a.tag !== b.tag ||
+					a.props?.key !== b.props?.key
+				);
+			}
+
+			function diffChildren(parent, oldCh, newCh) {
+				const keyed = oldCh.length && oldCh[0]?.props?.key != null;
+				if (keyed) {
+					// Build map of old keyed nodes, then reconcile by key.
+					const oldByKey = new Map(
+						oldCh.map((c) => [c.props.key, c]),
+					);
+					const oldEls = new Map(
+						oldCh.map((c) => [c.props.key, c._el]),
+					);
+					// Remove nodes whose keys disappeared
+					for (const c of oldCh) {
+						if (!newCh.some((n) => n.props.key === c.props.key)) {
+							parent.removeChild(c._el);
+						}
+					}
+					// Insert/patch in new order
+					newCh.forEach((nv, i) => {
+						const ov = oldByKey.get(nv.props.key);
+						if (ov) {
+							applyProps(ov._el, ov.props, nv.props);
+							nv._el = ov._el;
+							diffChildren(ov._el, ov.children, nv.children);
+							// ensure correct position
+							if (parent.childNodes[i] !== nv._el) {
+								parent.insertBefore(
+									nv._el,
+									parent.childNodes[i] || null,
+								);
+							}
+						} else {
+							const el = createEl(nv);
+							parent.insertBefore(
+								el,
+								parent.childNodes[i] || null,
+							);
+						}
+					});
+				} else {
+					const max = Math.max(oldCh.length, newCh.length);
+					for (let i = 0; i < max; i++) {
+						diff(parent, oldCh[i], newCh[i], i);
+					}
+					// trim extra trailing nodes
+					while (parent.childNodes.length > newCh.length) {
+						parent.removeChild(parent.lastChild);
+					}
+				}
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * App + a render loop that diffs old tree vs new tree.
+			 * ------------------------------------------------------------------ */
+			const root = document.getElementById("app");
+			let state = {
+				todos: [
+					{ id: 1, text: "Build a vdom", done: false },
+					{ id: 2, text: "Keep focus on inputs", done: false },
+				],
+				filter: "all",
+				draft: "",
+			};
+			let oldTree = null;
+			let nextId = 3;
+
+			function setState(patch) {
+				state = {
+					...state,
+					...(typeof patch === "function" ? patch(state) : patch),
+				};
+				render();
+			}
+
+			function visible() {
+				return state.todos.filter((t) =>
+					state.filter === "all"
+						? true
+						: state.filter === "active"
+						? !t.done
+						: t.done
+				);
+			}
+
+			function view() {
+				return h(
+					"div",
+					{},
+					h(
+						"div",
+						{ class: "flex gap-2 mb-3" },
+						h("input", {
+							class: "flex-1 border rounded px-3 py-2 text-sm",
+							placeholder: "What needs doing?",
+							value: state.draft,
+							oninput: (e) => {
+								state.draft = e.target.value;
+							}, // no re-render → focus kept
+							onkeydown: (e) => {
+								if (e.key === "Enter") add();
+							},
+						}),
+						h(
+							"button",
+							{
+								class: "bg-blue-600 text-white px-4 rounded text-sm",
+								onclick: add,
+							},
+							"Add",
+						),
+					),
+					h(
+						"div",
+						{ class: "flex gap-2 mb-3 text-xs" },
+						...["all", "active", "done"].map((f) =>
+							h(
+								"button",
+								{
+									class: "px-2 py-1 rounded " +
+										(state.filter === f
+											? "bg-slate-800 text-white"
+											: "bg-slate-200"),
+									onclick: () => setState({ filter: f }),
+								},
+								f,
+							)
+						),
+						h(
+							"span",
+							{ class: "ml-auto text-slate-400 self-center" },
+							state.todos.filter((t) => !t.done).length + " left",
+						),
+					),
+					h(
+						"ul",
+						{ class: "space-y-1" },
+						...(visible().length
+							? visible().map((t) =>
+								h(
+									"li",
+									{
+										key: t.id,
+										class:
+											"flex items-center gap-2 bg-white border rounded px-3 py-2",
+									},
+									h("input", {
+										type: "checkbox",
+										checked: t.done,
+										onchange: () => toggle(t.id),
+									}),
+									h(
+										"span",
+										{
+											class: "flex-1 text-sm " +
+												(t.done
+													? "line-through text-slate-400"
+													: ""),
+										},
+										t.text,
+									),
+									h(
+										"button",
+										{
+											class: "text-red-400 text-xs",
+											onclick: () => remove(t.id),
+										},
+										"✕",
+									),
+								)
+							)
+							: [
+								h(
+									"li",
+									{
+										class: "text-slate-400 text-sm text-center py-4",
+									},
+									"Nothing here",
+								),
+							]),
+					),
+				);
+			}
+
+			function render() {
+				const newTree = view();
+				if (!oldTree) {
+					root.appendChild(createEl(newTree));
+				} else {
+					diff(root, oldTree, newTree, 0);
+				}
+				oldTree = newTree;
+			}
+
+			function add() {
+				const text = state.draft.trim();
+				if (!text) return;
+				setState((s) => ({
+					todos: [...s.todos, { id: nextId++, text, done: false }],
+					draft: "",
+				}));
+			}
+			function toggle(id) {
+				setState((s) => ({
+					todos: s.todos.map((t) => t.id === id ? { ...t, done: !t.done } : t),
+				}));
+			}
+			function remove(id) {
+				setState((s) => ({
+					todos: s.todos.filter((t) => t.id !== id),
+				}));
+			}
+
+			render();
+		</script>
+	</body>
+</html>

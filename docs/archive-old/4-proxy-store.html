@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Approach 4 — Proxy Store + Manual Bindings</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				Approach 4: <code>Proxy</code> reactive store +
+				<code>bind()</code> effects
+			</p>
+			<div id="app"></div>
+		</div>
+
+		<script>
+			/* ------------------------------------------------------------------ *
+			 * reactive(obj): wraps an object tree in Proxies.
+			 *  - GET during an active effect records (target, key) as a dependency
+			 *  - SET notifies effects that read that exact (target, key)
+			 * This gives per-property tracking without explicit signals.
+			 * ------------------------------------------------------------------ */
+			let active = null;
+			const depMap = new WeakMap(); // target -> Map<key, Set<effect>>
+
+			function track(target, key) {
+				if (!active) return;
+				let keys = depMap.get(target);
+				if (!keys) depMap.set(target, keys = new Map());
+				let deps = keys.get(key);
+				if (!deps) keys.set(key, deps = new Set());
+				deps.add(active);
+			}
+
+			function trigger(target, key) {
+				const keys = depMap.get(target);
+				if (!keys) return;
+				const deps = keys.get(key);
+				if (deps) [...deps].forEach((fn) => fn());
+				// arrays mutate length/index — also wake "iteration" readers
+				const iter = keys.get(Symbol.for("iterate"));
+				if (iter) [...iter].forEach((fn) => fn());
+			}
+
+			function reactive(obj) {
+				if (obj === null || typeof obj !== "object") return obj;
+				return new Proxy(obj, {
+					get(target, key, recv) {
+						if (key === "__isReactive") return true;
+						track(target, key);
+						if (
+							Array.isArray(target) &&
+							typeof key === "string" &&
+							!isNaN(+key)
+						) {
+							track(target, Symbol.for("iterate"));
+						}
+						const val = Reflect.get(target, key, recv);
+						return typeof val === "object" && val !== null
+							? reactive(val)
+							: val;
+					},
+					set(target, key, value, recv) {
+						const old = target[key];
+						const res = Reflect.set(target, key, value, recv);
+						if (old !== value) {
+							trigger(target, key);
+							trigger(target, Symbol.for("iterate")); // length/structure changed
+						}
+						return res;
+					},
+				});
+			}
+
+			function bind(fn) {
+				// an "effect": re-runs when its reads change
+				const run = () => {
+					active = run;
+					try {
+						fn();
+					} finally {
+						active = null;
+					}
+				};
+				run();
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * App state — plain object, mutated directly (state.x = ...; arr.push)
+			 * ------------------------------------------------------------------ */
+			const state = reactive({
+				todos: [
+					{ id: 1, text: "Try Proxy reactivity", done: false },
+					{ id: 2, text: "Mutate state directly", done: true },
+				],
+				filter: "all",
+			});
+			let nextId = 3;
+
+			function visible() {
+				const f = state.filter;
+				return state.todos.filter((t) =>
+					f === "all" ? true : f === "active" ? !t.done : t.done
+				);
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * View built once with real nodes; bind() effects update just the
+			 * pieces that read changed properties. The list section re-renders
+			 * its container, the rest update independently.
+			 * ------------------------------------------------------------------ */
+			const app = document.getElementById("app");
+			app.innerHTML = `
+  <div class="flex gap-2 mb-3">
+    <input id="new" class="flex-1 border rounded px-3 py-2 text-sm" placeholder="What needs doing?" />
+    <button id="add" class="bg-blue-600 text-white px-4 rounded text-sm">Add</button>
+  </div>
+  <div id="filters" class="flex gap-2 mb-3 text-xs"></div>
+  <ul id="list" class="space-y-1"></ul>
+`;
+
+			const $new = app.querySelector("#new");
+			const $add = app.querySelector("#add");
+			const $filters = app.querySelector("#filters");
+			const $list = app.querySelector("#list");
+
+			// Filter buttons: their highlight depends on state.filter only.
+			["all", "active", "done"].forEach((f) => {
+				const btn = document.createElement("button");
+				btn.textContent = f;
+				btn.className = "px-2 py-1 rounded bg-slate-200";
+				btn.onclick = () => {
+					state.filter = f;
+				};
+				$filters.appendChild(btn);
+				bind(() => {
+					btn.className = "px-2 py-1 rounded " +
+						(state.filter === f ? "bg-slate-800 text-white" : "bg-slate-200");
+				});
+			});
+			// "N left" counter — re-runs only when todos change.
+			const counter = document.createElement("span");
+			counter.className = "ml-auto text-slate-400 self-center";
+			$filters.appendChild(counter);
+			bind(() => {
+				counter.textContent = state.todos.filter((t) => !t.done).length + " left";
+			});
+
+			// List: container-level effect; rebuilds <ul> children on any change.
+			bind(() => {
+				const list = visible();
+				$list.innerHTML = "";
+				if (!list.length) {
+					$list.innerHTML =
+						'<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>';
+					return;
+				}
+				list.forEach((t) => {
+					const li = document.createElement("li");
+					li.className =
+						"flex items-center gap-2 bg-white border rounded px-3 py-2";
+					const cb = document.createElement("input");
+					cb.type = "checkbox";
+					cb.checked = t.done;
+					cb.onchange = () => {
+						t.done = !t.done;
+					}; // direct mutation
+					const span = document.createElement("span");
+					span.className = "flex-1 text-sm " +
+						(t.done ? "line-through text-slate-400" : "");
+					span.textContent = t.text;
+					const del = document.createElement("button");
+					del.className = "text-red-400 text-xs";
+					del.textContent = "✕";
+					del.onclick = () => {
+						const i = state.todos.findIndex((x) => x.id === t.id);
+						state.todos.splice(i, 1);
+					};
+					li.append(cb, span, del);
+					$list.appendChild(li);
+				});
+			});
+
+			function add() {
+				const text = $new.value.trim();
+				if (!text) return;
+				state.todos.push({ id: nextId++, text, done: false }); // push triggers iterate
+				$new.value = "";
+			}
+			$add.onclick = add;
+			$new.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") add();
+			});
+		</script>
+	</body>
+</html>

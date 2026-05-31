@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>Approach 2 — Tagged Template + String Render</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
+			<p class="text-xs text-slate-400 mb-4">
+				Approach 2: tagged-template <code>html``</code> + innerHTML swap
+			</p>
+			<div id="app"></div>
+		</div>
+
+		<script>
+			/* ------------------------------------------------------------------ *
+			 * html`` tagged template
+			 *  - auto-escapes interpolated values (XSS safety)
+			 *  - arrays are joined (so .map(...) just works)
+			 *  - wrap a value in raw() to opt out of escaping (trusted HTML)
+			 * ------------------------------------------------------------------ */
+			const RAW = Symbol("raw");
+			const raw = (s) => ({ [RAW]: true, value: s });
+
+			function escapeHtml(s) {
+				return String(s)
+					.replace(/&/g, "&amp;")
+					.replace(/</g, "&lt;")
+					.replace(/>/g, "&gt;")
+					.replace(/"/g, "&quot;")
+					.replace(/'/g, "&#39;");
+			}
+
+			function html(strings, ...values) {
+				return strings.reduce((acc, str, i) => {
+					let v = values[i - 1];
+					if (Array.isArray(v)) v = v.join("");
+					else if (v && v[RAW]) v = v.value;
+					else if (v == null) v = "";
+					else v = escapeHtml(v);
+					return acc + v + str;
+				});
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * Tiny store: state object + a single render trigger.
+			 * No fine-grained tracking — any setState() re-renders the container.
+			 * ------------------------------------------------------------------ */
+			const app = document.getElementById("app");
+			let state, view;
+
+			function mount(initial, viewFn) {
+				state = initial;
+				view = viewFn;
+				render();
+			}
+			function setState(patch) {
+				state = {
+					...state,
+					...(typeof patch === "function" ? patch(state) : patch),
+				};
+				render();
+			}
+			function render() {
+				app.innerHTML = view(state); // string render → full swap
+			}
+
+			/* ------------------------------------------------------------------ *
+			 * App
+			 * ------------------------------------------------------------------ */
+			let nextId = 3;
+
+			function visible(s) {
+				return s.todos.filter((t) =>
+					s.filter === "all" ? true : s.filter === "active" ? !t.done : t.done
+				);
+			}
+
+			mount(
+				{
+					todos: [
+						{ id: 1, text: "Learn tagged templates", done: false },
+						{ id: 2, text: "Mind the XSS", done: true },
+					],
+					filter: "all",
+				},
+				(s) =>
+					html`
+						<div class="flex gap-2 mb-3">
+							<input
+								id="new"
+								class="flex-1 border rounded px-3 py-2 text-sm"
+								placeholder="What needs doing?"
+							/>
+							<button
+								onclick="addTodo()"
+								class="bg-blue-600 text-white px-4 rounded text-sm"
+							>
+								Add
+							</button>
+						</div>
+						<div class="flex gap-2 mb-3 text-xs">
+							${["all", "active", "done"].map(
+								(f) =>
+									html`
+										<button
+											onclick="setState({filter:'${raw(f)}'})"
+											class="px-2 py-1 rounded ${raw(
+												s.filter === f
+													? "bg-slate-800 text-white"
+													: "bg-slate-200",
+											)}"
+										>
+											${f}
+										</button>
+									`,
+							)}
+							<span class="ml-auto text-slate-400 self-center">${s.todos
+								.filter((t) => !t.done).length} left</span>
+						</div>
+						<ul class="space-y-1">
+							${visible(s).map(
+								(t) =>
+									html`
+										<li
+											class="flex items-center gap-2 bg-white border rounded px-3 py-2"
+										>
+											<input
+												type="checkbox"
+												${raw(t.done ? "checked" : "")}
+												onchange="toggle(${t.id})"
+											/>
+											<span
+												class="flex-1 text-sm ${raw(
+													t.done
+														? "line-through text-slate-400"
+														: "",
+												)}"
+											>${t.text}</span>
+											<button
+												onclick="remove(${t.id})"
+												class="text-red-400 text-xs"
+											>
+												✕
+											</button>
+										</li>
+									`,
+							)} ${visible(s).length === 0
+								? raw(
+									'<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>',
+								)
+								: ""}
+						</ul>
+					`,
+			);
+
+			/* Inline handlers reference globals (the trade-off of string render). */
+			function addTodo() {
+				const input = app.querySelector("#new");
+				const text = input.value.trim();
+				if (!text) return;
+				setState((s) => ({
+					todos: [...s.todos, { id: nextId++, text, done: false }],
+				}));
+			}
+			function toggle(id) {
+				setState((s) => ({
+					todos: s.todos.map((t) => t.id === id ? { ...t, done: !t.done } : t),
+				}));
+			}
+			function remove(id) {
+				setState((s) => ({
+					todos: s.todos.filter((t) => t.id !== id),
+				}));
+			}
+			// Enter-to-add (delegated, since the input node is recreated each render)
+			app.addEventListener("keydown", (e) => {
+				if (e.target.id === "new" && e.key === "Enter") addTodo();
+			});
+		</script>
+	</body>
+</html>
