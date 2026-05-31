@@ -1,0 +1,6 @@
+Tiny, explicit reactive DOM library for vanilla-JS prototyping (no build step, no virtual DOM).
+Provides observable/computed reactive primitives with explicit dependency lists (reactTo) and
+batched microtask/raf scheduling, plus a view layer built on native platform features:
+<template> cloning, data-bind one-way bindings, event delegation via data-on, and a track()/destroy()
+lifecycle. Includes component composition (mount, props convention) and single-file components
+(template + inline module logic) loaded at runtime.
