@@ -222,9 +222,16 @@ export function fromTemplate<T extends Element = HTMLElement>(id: string): T {
 	return first.cloneNode(true) as unknown as T;
 }
 
-/** Collect `[data-ref="name"]` nodes into `{ name: el }`. */
+/**
+ * Collect `[data-ref="name"]` nodes into `{ name: el }`. Includes `root` itself
+ * if it matches `[data-ref]` — so all three view helpers ({@link refs},
+ * {@link applyBindings}, {@link delegate}) see the root. A descendant with the
+ * same name shadows the root, since the map is keyed by name in document order.
+ */
 export function refs(root: ParentNode): Record<string, HTMLElement> {
 	const map: Record<string, HTMLElement> = {};
+	const self = root as HTMLElement;
+	if (self.matches?.("[data-ref]")) map[self.dataset.ref!] = self;
 	root.querySelectorAll<HTMLElement>("[data-ref]").forEach((el) => {
 		map[el.dataset.ref!] = el;
 	});

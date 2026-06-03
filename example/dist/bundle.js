@@ -83,6 +83,8 @@ function fromTemplate(id) {
 }
 function refs(root) {
     const map = {};
+    const self = root;
+    if (self.matches?.("[data-ref]")) map[self.dataset.ref] = self;
     root.querySelectorAll("[data-ref]").forEach((el)=>{
         map[el.dataset.ref] = el;
     });

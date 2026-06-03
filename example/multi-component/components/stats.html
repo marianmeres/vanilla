@@ -14,8 +14,8 @@
 	 * Subscribing to the computed directly means this only re-runs when the
 	 * derived number (or the list length) actually changes.
 	 *
-	 * Note: this component's root IS the <p>, so we write to `el` directly —
-	 * `refs()` collects DESCENDANTS with data-ref, not the root element itself.
+	 * Note: this component's root IS the <p> and has no data-ref, so we write to
+	 * `el` directly rather than bothering with `refs()`.
 	 */
 	export function createStats({ remaining, todos }) {
 		return createView((track) => {

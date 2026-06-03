@@ -99,7 +99,8 @@ const row = fromTemplate("tpl-row"); // <li>…</li> clone
 
 ### `refs(root)`
 
-Collect `[data-ref="name"]` **descendant** nodes into `{ name: el }`.
+Collect `[data-ref="name"]` nodes into `{ name: el }`, including `root` itself if
+it matches `[data-ref]`.
 
 **Parameters:**
 
@@ -107,8 +108,10 @@ Collect `[data-ref="name"]` **descendant** nodes into `{ name: el }`.
 
 **Returns:** `Record<string, HTMLElement>`.
 
-**Note:** descendants only — `root` itself is not included even if it has
-`data-ref`. For a single-element view, use the element directly.
+**Note:** `root` itself is included if it matches `[data-ref]`, consistent with
+`applyBindings` and `delegate`. If both the root and a descendant share a name,
+the descendant wins (document order). (For a single-element view you can also
+just use the element directly — `refs(el)[name]` would equal `el`.)
 
 **Example:**
 

@@ -169,7 +169,7 @@ Clones the first element of a `<template>`'s content. This is the entire "create
 
 #### `refs(root)`
 
-Collects `[data-ref="name"]` nodes into `{ name: el }` for ergonomic access without scattering `querySelector` calls. A `data-*` convention (P3).
+Collects `[data-ref="name"]` nodes into `{ name: el }` for ergonomic access without scattering `querySelector` calls. A `data-*` convention (P3). Includes `root` itself if it matches, so all three view helpers see the root consistently.
 
 #### `applyBindings(root, data)`
 
@@ -257,7 +257,6 @@ These are **accepted**, not bugs to fix unless scope changes:
 - **No two-way binding.** `data-bind` is data → DOM only. A future `data-model`-style two-way binding for inputs is a reasonable addition _if_ it stays explicit about which observable it targets and integrates with `track()`. Discuss before adding.
 - **Global template-id namespace.** `fromTemplate(id)` / the loaders all resolve against the one `document`. Templates from many component files share a single id space, so **prefix ids** (`tpl-filter`, `tpl-todo-item`) to avoid collisions. The loaders skip adopting an id already present.
 - **`delegate` action-name collisions across _nested_ roots.** Events bubble; a parent delegate root sees a child's `data-on` element (it passes `root.contains`). If a nested parent and child share an action _name_, both fire. Sibling components (the common case — §4.6) never collide; for nested delegate roots, use distinct action names or `stopPropagation`.
-- **`refs(root)` excludes the root element.** It collects `[data-ref]` **descendants**, not `root` itself (unlike `applyBindings`, which _does_ include the root). A single-element component whose root carries the ref should write to `el` directly. (Reconciling these two is a possible future tidy-up; for now they differ.)
 - **Single-file components require an import map + a server, and may trip strict CSP.** `loadComponent` imports the inline script from a `blob:` URL; that needs the host's import map (bare specifier) and a `script-src` permitting `blob:`. For prototyping (no strict CSP) this is a non-issue; under a locked-down CSP, prefer the two-file pattern (`loadTemplates` + a normal `import`).
 
 ---
