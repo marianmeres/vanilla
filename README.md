@@ -80,6 +80,26 @@ current call stack); pass `{ scheduler: "raf" }` for frame-rate-bound effects
 reactTo([scrollY], render, { scheduler: "raf" });
 ```
 
+### If these names look familiar
+
+`observable` / `computed` are the **Knockout / MobX / Vue** vocabulary, not new
+inventions. The closest well-known cousins are Svelte's `svelte/store`:
+
+| `vanilla`              | Svelte `svelte/store` | shared idea                                    |
+| ---------------------- | --------------------- | ---------------------------------------------- |
+| `observable(v)`        | `writable(v)`         | `subscribe` / `set` / `update`                 |
+| `computed([a, b], fn)` | `derived([a, b], fn)` | read-only value from an **explicit** source list |
+
+The match is to Svelte's **stores**, _not_ its runes (`$state` / `$derived`):
+like `derived`, `computed` makes you **name its sources** — there is no compiler
+and no auto-tracking. Three deliberate departures from `writable`: updates are
+**batched** (microtask/raf) rather than synchronous, the equality guard is
+**strict `===`** (so update immutably — see above), and `observable` exposes a
+first-class `get()`.
+
+> Note: `observable` here is a single current-value cell (a "signal" / "atom" /
+> `ko.observable`), **not** an RxJS `Observable` (a lazy multi-value stream).
+
 ## View layer
 
 Views are cloned from `<template>` elements and wired with `data-*` attributes:
@@ -276,6 +296,12 @@ deno task example:watch   # rebuild on change
   truth, filter by show/hide, no client rebuild of the list.
 - [`example/multi-component/`](./example/multi-component/index.html) — the same
   app split into **single-file components** with **props** down and callbacks up.
+- [`example/quake-watch.html`](./example/quake-watch.html) — a live USGS
+  earthquake feed (real `fetch` with abort + loading/error states), a client-side
+  magnitude filter, and runtime **light/dark + theme switching** via
+  [`@marianmeres/design-tokens`](https://jsr.io/@marianmeres/design-tokens) with
+  the Bootstrap Reboot bridge. Regenerate the theme CSS with
+  `deno run -A example/themes/_generate.ts`.
 
 ## API
 
