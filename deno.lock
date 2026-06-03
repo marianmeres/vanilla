@@ -1,6 +1,7 @@
 {
   "version": "5",
   "specifiers": {
+    "jsr:@marianmeres/design-tokens@1": "1.8.0",
     "jsr:@marianmeres/npmbuild@1": "1.16.0",
     "jsr:@std/assert@1": "1.0.19",
     "jsr:@std/collections@^1.1.7": "1.2.0",
@@ -11,6 +12,9 @@
     "jsr:@std/path@^1.1.5": "1.1.5"
   },
   "jsr": {
+    "@marianmeres/design-tokens@1.8.0": {
+      "integrity": "19bc91920de97c7c1c1414ce76c177ff3379bc9ab4ba581d16a17fa793804ce6"
+    },
     "@marianmeres/npmbuild@1.16.0": {
       "integrity": "5631b65d284472d1325ecf829dce22e2df166fa3b754cd3f005c8eccd05ee8f0",
       "dependencies": [
