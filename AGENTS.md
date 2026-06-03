@@ -39,12 +39,14 @@ scripts/build-npm.ts      — npm dist build
 5. **Components = factories returning views.** Compose with `mount(track, slot,
    factory, props)`. **Props** are the factory's single argument: _value_ /
    _observable_ (data down) / _callback_ (events up). No props framework.
-6. **Single-file components.** One `.html` = `<template>`(s) + inline
-   `<script type="module">`, loaded by `loadComponent`. The inline script imports
-   the library by **bare specifier**; the host declares an **import map**. Rule:
-   **`await loadComponent(...)` before mounting** (`fromTemplate` throws if the
-   template isn't adopted yet). Prefix template ids (`tpl-…`) — the id space is
-   global.
+6. **Single-file components.** One `.html` = `<template>`(s) + optional
+   `<style>`(s) + inline `<script type="module">`, loaded by `loadComponent`. The
+   inline script imports the library by **bare specifier**; the host declares an
+   **import map**. Rule: **`await loadComponent(...)` before mounting**
+   (`fromTemplate` throws if the template isn't adopted yet). Prefix template ids
+   (`tpl-…`) — the id space is global. Adopted `<style>`s land in `<head>` and are
+   **global** (no auto-scoping by design); for encapsulation use native CSS
+   `@scope` against a root class the component owns — never add selector-rewriting.
 7. **Stay small.** The core is one readable file (P5). A helper earns its place
    only by removing a _recurring_ sharp edge.
 8. **Derivation vs effect.** A `computed`'s `calc` must be **pure** — read sources,

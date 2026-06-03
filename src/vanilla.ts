@@ -579,6 +579,21 @@ function adoptTemplates(doc: Document): void {
 	});
 }
 
+/** Copy every `<style>` from a parsed component doc into the live document's
+ * `<head>`. The rules are **global** — they join the page cascade like any other
+ * stylesheet; this is _not_ automatic per-component scoping (see
+ * {@link loadComponent} for the rationale and the `@scope` pattern). `src` is
+ * stamped onto each adopted node as `data-vanilla-src` for devtools provenance.
+ * Callers dedupe upstream ({@link loadComponent} is memoized per URL), so this
+ * runs once per component file. */
+function adoptStyles(doc: Document, src: string): void {
+	doc.querySelectorAll("style").forEach((s) => {
+		const clone = document.importNode(s, true);
+		clone.dataset.vanillaSrc = src;
+		document.head.appendChild(clone);
+	});
+}
+
 const _templateLoads = new Map<string, Promise<void>>();
 
 /**
@@ -608,13 +623,17 @@ export function loadTemplates(url: string): Promise<void> {
 const _componentLoads = new Map<string, Promise<Record<string, unknown>>>();
 
 /**
- * Load a **single-file component**: one `.html` file holding both its markup
- * (`<template>`s) and its logic (an inline `<script type="module">`). The
- * templates are adopted into the document; the inline module is imported and its
- * **exports are returned** (typically the factory). Idempotent per URL.
+ * Load a **single-file component**: one `.html` file holding its markup
+ * (`<template>`s), its styles (`<style>`), and its logic (an inline
+ * `<script type="module">`). The templates are adopted into the document, the
+ * styles into `<head>`, and the inline module is imported and its **exports are
+ * returned** (typically the factory). Idempotent per URL.
  *
  *     <!-- components/filter-bar.html -->
  *     <template id="tpl-filter">…</template>
+ *     <style>
+ *       @scope (.filter-bar) { button { … } }   // optional — see "Styles" below
+ *     </style>
  *     <script type="module">
  *       import { createView, fromTemplate, delegate } from "@marianmeres/vanilla";
  *       export function createFilterBar({ filter, onPick }) { … }
@@ -622,6 +641,20 @@ const _componentLoads = new Map<string, Promise<Record<string, unknown>>>();
  *
  *     const { createFilterBar } = await loadComponent("./components/filter-bar.html");
  *     mount(track, r.filterSlot, createFilterBar, { filter, onPick });
+ *
+ * **Styles (global by default; scope them yourself).** Every `<style>` is copied
+ * verbatim into `<head>`, so the component's CSS and the page's global sheets
+ * (Tailwind, a theme, Reboot) share one cascade — usually what a prototype wants.
+ * There is **no automatic per-component scoping**: that needs a selector-rewriting
+ * compiler (Svelte/Vue) or Shadow DOM (which would orphan global utility classes),
+ * and both are out of scope for a no-build library. When you do want encapsulation,
+ * reach for the platform: wrap the rules in CSS `@scope` against a root class the
+ * component owns —
+ *
+ *     <style>@scope (.filter-bar) { button { background: rebeccapurple } }</style>
+ *
+ * — and put that class on the template's root element. The `button` rule then
+ * matches only inside `.filter-bar`, no build step and no magic.
  *
  * **Mechanism / requirement.** The inline script is imported via a `blob:` URL,
  * so it must import the library by **bare specifier**
@@ -643,6 +676,7 @@ export function loadComponent(url: string): Promise<Record<string, unknown>> {
 			const html = await fetch(abs).then((r) => r.text());
 			const doc = new DOMParser().parseFromString(html, "text/html");
 			adoptTemplates(doc);
+			adoptStyles(doc, abs);
 			const script = doc.querySelector<HTMLScriptElement>('script[type="module"]');
 			if (!script) return {};
 			// Import the inline module via a blob URL to get its real exports.

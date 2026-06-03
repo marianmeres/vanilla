@@ -307,9 +307,10 @@ const card = fromTemplate("tpl-card");
 
 ### `loadComponent(url)`
 
-Load a **single-file component**: one `.html` holding both its `<template>`(s)
-and its logic (an inline `<script type="module">`). Adopts the templates and
-returns the inline module's exports (typically the factory). Idempotent per URL.
+Load a **single-file component**: one `.html` holding its `<template>`(s), its
+`<style>`(s), and its logic (an inline `<script type="module">`). Adopts the
+templates (into the document) and styles (into `<head>`), and returns the inline
+module's exports (typically the factory). Idempotent per URL.
 
 **Parameters:**
 
@@ -321,6 +322,23 @@ returns the inline module's exports (typically the factory). Idempotent per URL.
 (`from "@marianmeres/vanilla"`), and the host page declares an import map (it is
 imported from a `blob:` URL, which only resolves bare specifiers). Requires a
 static server. See [README → Single-file components](./README.md#single-file-components).
+
+**Styles are global; scope them yourself.** Each `<style>` is copied verbatim
+into `<head>`, so component CSS and the page's global sheets (Tailwind, a theme,
+Reboot) share **one cascade** — usually what a prototype wants. There is **no
+automatic per-component scoping** (that needs a selector-rewriting compiler or
+Shadow DOM — both out of scope for a no-build library). For encapsulation, use
+the platform: wrap the rules in native CSS [`@scope`](https://developer.mozilla.org/en-US/docs/Web/CSS/@scope)
+against a root class the component owns, and put that class on the template root:
+
+```html
+<template id="tpl-filter"><div class="filter-bar">…<button>…</button>…</div></template>
+<style>
+	@scope (.filter-bar) {
+		button { background: rebeccapurple } /* matches only inside .filter-bar */
+	}
+</style>
+```
 
 **Example:**
 

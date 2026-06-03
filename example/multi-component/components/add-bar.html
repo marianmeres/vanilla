@@ -8,7 +8,8 @@
 	specifiers through the host page's <script type="importmap">.
 -->
 <template id="tpl-add">
-	<div class="flex gap-2">
+	<!-- the `add-bar` class is the scope root the <style> below anchors to -->
+	<div class="add-bar flex gap-2">
 		<input
 			data-ref="input"
 			class="flex-1 border rounded px-3 py-2 text-sm"
@@ -21,6 +22,32 @@
 		</button>
 	</div>
 </template>
+
+<!--
+	OPTIONAL <style> block — loadComponent() copies it verbatim into <head>.
+	Adopted styles are GLOBAL (one page cascade with Tailwind etc.); there is no
+	automatic per-component scoping. To encapsulate, use the platform: wrap the
+	rules in native CSS @scope against a root class the component owns (`.add-bar`,
+	on the template root above). The bare `input`/`button` selectors below then
+	match ONLY inside this component — no build step, no magic.
+-->
+<style>
+	@scope (.add-bar) {
+		input:focus {
+			outline: 2px solid #2563eb; /* blue-600 */
+			outline-offset: 1px;
+		}
+		button {
+			transition: transform 0.06s ease, filter 0.12s ease;
+		}
+		button:hover {
+			filter: brightness(1.08);
+		}
+		button:active {
+			transform: translateY(1px);
+		}
+	}
+</style>
 
 <script type="module">
 	import { createView, delegate, fromTemplate, refs } from "@marianmeres/vanilla";

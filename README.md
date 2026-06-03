@@ -259,11 +259,13 @@ const app = createView((track) => {
 
 ### Single-file components
 
-A component can live as **one `.html` file** holding both its `<template>` and its
-logic (an inline `<script type="module">`). `loadComponent(url)` adopts the
-templates and returns the inline module's exports. The host declares an **import
-map** once so the component can import the library by name (it's loaded from a
-`blob:` URL, which only resolves bare specifiers):
+A component can live as **one `.html` file** holding its `<template>`, its
+`<style>`, and its logic (an inline `<script type="module">`) — markup, styling,
+and behavior co-located, the nice DX the big frameworks popularized, minus the
+build step. `loadComponent(url)` adopts the templates (into the document) and
+styles (into `<head>`), and returns the inline module's exports. The host declares
+an **import map** once so the component can import the library by name (it's
+loaded from a `blob:` URL, which only resolves bare specifiers):
 
 ```html
 <!-- host page -->
@@ -284,17 +286,30 @@ map** once so the component can import the library by name (it's loaded from a
 ```
 
 ```html
-<!-- components/filter-bar.html — markup + logic, co-located -->
-<template id="tpl-filter"> … </template>
+<!-- components/filter-bar.html — markup + styles + logic, co-located -->
+<template id="tpl-filter"><div class="filter-bar"> … </div></template>
+<style>
+	/* Optional. Adopted into <head> — GLOBAL by default. Encapsulate with
+	   native CSS @scope against a root class the component owns: */
+	@scope (.filter-bar) {
+		button { … } /* matches only inside .filter-bar */
+	}
+</style>
 <script type="module">
 	import { createView, delegate, fromTemplate } from "@marianmeres/vanilla";
 	export function createFilterBar(props) {/* …returns a view… */}
 </script>
 ```
 
+The `<style>` block is **optional** and its rules are **global** — there's no
+automatic per-component scoping (that's a compiler/Shadow-DOM job; both are out of
+scope here). `@scope` is the no-build way to get encapsulation when you want it.
+
 A static server is assumed (cross-file `import`/`fetch` don't work from `file://`).
 The runnable version is in
-[`example/multi-component/`](./example/multi-component/index.html).
+[`example/multi-component/`](./example/multi-component/index.html) (see
+[`add-bar.html`](./example/multi-component/components/add-bar.html) for a `@scope`d
+`<style>` block).
 
 **How does `loadComponent` run a `.html` file's inline script?** See
 [docs/SINGLE_FILE_COMPONENTS.md](./docs/SINGLE_FILE_COMPONENTS.md) for the

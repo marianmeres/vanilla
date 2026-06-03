@@ -1,13 +1,20 @@
 # Single-file components — how `loadComponent` works
 
-A **single-file component** is one `.html` file holding both its markup and its
-logic:
+A **single-file component** is one `.html` file holding its markup, its styling,
+and its logic:
 
 ```html
 <!-- components/filter-bar.html -->
 
 <!-- the markup -->
-<template id="tpl-filter"> … </template>
+<template id="tpl-filter"><div class="filter-bar"> … </div></template>
+
+<!-- the styling (optional) -->
+<style>
+	@scope (.filter-bar) {
+		button { … }
+	} /* see "Styles" below */
+</style>
 
 <!-- the logic -->
 <script type="module">
@@ -17,9 +24,11 @@ logic:
 ```
 
 `loadComponent(url)` loads that file, makes the `<template>` available to
-`fromTemplate`, **runs the inline script, and hands you its exports** (the
-factory). This document explains the one non-obvious part: how a fetched `.html`
-file's inline script actually gets executed and its `export`s returned.
+`fromTemplate`, copies any `<style>` into `<head>`, and **runs the inline script
+and hands you its exports** (the factory). This document explains the one
+non-obvious part: how a fetched `.html` file's inline script actually gets
+executed and its `export`s returned. (The `<template>` and `<style>` halves are
+the easy part — parse and drop them into the document.)
 
 For the API surface see [API.md](../API.md#loadcomponenturl); for where this fits
 in the design see [DESIGN.md §4.6](./DESIGN.md#46-composition--components-props-lifecycle).
@@ -29,9 +38,10 @@ in the design see [DESIGN.md §4.6](./DESIGN.md#46-composition--components-props
 ## The problem
 
 `loadComponent` does `fetch(url)` and gets the whole file back **as a string of
-text**. The `<template>` half is easy — parse it and drop it into the document.
-The hard half: that `<script>` is now just _text_. How do you **run** it and get
-its `export` (the factory function) back into your hands?
+text**. The `<template>` and `<style>` halves are easy — parse them and drop them
+into the document (templates → `<body>`, styles → `<head>`). The hard half: that
+`<script>` is now just _text_. How do you **run** it and get its `export` (the
+factory function) back into your hands?
 
 ## Why the obvious options don't work
 
@@ -75,7 +85,9 @@ A Blob URL is just a **bridge**: it turns your string of code into something
 ```
 components/filter-bar.html  ──fetch──►  text
        │
-       ├─ <template>  ─parse─►  adopted into the document   (so fromTemplate("tpl-filter") works)
+       ├─ <template>  ─parse─►  adopted into <body>   (so fromTemplate("tpl-filter") works)
+       │
+       ├─ <style>     ─parse─►  adopted into <head>   (global rules; scope with @scope yourself)
        │
        └─ <script> text
                │  new Blob(...) + URL.createObjectURL(...)
@@ -122,6 +134,41 @@ whole reason:
 > Fetch the component as text → wrap its script in a **Blob** → that gives it a
 > **URL** → `import()` that URL to run it and grab its **exports** → the
 > **import map** tells that code where to find the library.
+
+## Styles: global by default, `@scope` for encapsulation
+
+A component's `<style>` is copied **verbatim into `<head>`**, so its rules join
+the page's one cascade alongside Tailwind, a theme, or Reboot. That is usually
+what a prototype wants — global utilities and themes _should_ reach into the
+component. The flip side: a bare selector like `button { … }` restyles **every**
+button on the page.
+
+There is **no automatic per-component scoping**, by design — that would need a
+selector-rewriting compiler (the CSS you wrote ≠ the CSS that runs) or Shadow DOM
+(which would orphan the global sheets components rely on). When you do want
+encapsulation, reach for the platform's own primitive, native CSS
+[`@scope`](https://developer.mozilla.org/en-US/docs/Web/CSS/@scope):
+
+```html
+<template id="tpl-filter">
+	<div class="filter-bar"> … <button>all</button> … </div>
+</template>
+<style>
+	@scope (.filter-bar) {
+		button { background: rebeccapurple } /* matches only inside .filter-bar */
+	}
+</style>
+```
+
+Put the scope-root class (`.filter-bar`) on the template's root element; the
+rules inside `@scope` then match only within that subtree. It's explicit (the
+boundary is right there in the file), native, and needs no build step. See
+[`example/multi-component/components/add-bar.html`](../example/multi-component/components/add-bar.html)
+for a working `@scope`d block.
+
+> `loadTemplates` adopts no styles — it is for shared template fragments, not
+> self-contained components. Put `<style>` in component files loaded with
+> `loadComponent`.
 
 ## Practical notes
 

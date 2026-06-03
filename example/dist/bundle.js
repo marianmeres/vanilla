@@ -212,6 +212,13 @@ function adoptTemplates(doc) {
         }
     });
 }
+function adoptStyles(doc, src) {
+    doc.querySelectorAll("style").forEach((s)=>{
+        const clone = document.importNode(s, true);
+        clone.dataset.vanillaSrc = src;
+        document.head.appendChild(clone);
+    });
+}
 const _templateLoads = new Map();
 function loadTemplates(url) {
     const abs = new URL(url, document.baseURI).href;
@@ -231,6 +238,7 @@ function loadComponent(url) {
             const html = await fetch(abs).then((r)=>r.text());
             const doc = new DOMParser().parseFromString(html, "text/html");
             adoptTemplates(doc);
+            adoptStyles(doc, abs);
             const script = doc.querySelector('script[type="module"]');
             if (!script) return {};
             const blobUrl = URL.createObjectURL(new Blob([
