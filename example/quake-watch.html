@@ -808,13 +808,17 @@
 			let activeLink = document.getElementById("theme-link");
 
 			function setThemeHref(href) {
-				if (activeLink.getAttribute("href") === href) return;
+				// Snapshot the current sheet. The load handler fires *after* we
+				// reassign `activeLink` below, so it must close over this local —
+				// otherwise it removes the new sheet it just loaded, not the old one.
+				const prev = activeLink;
+				if (prev.getAttribute("href") === href) return;
 				const next = document.createElement("link");
 				next.rel = "stylesheet";
 				next.href = href;
-				next.addEventListener("load", () => activeLink.remove(), { once: true });
+				next.addEventListener("load", () => prev.remove(), { once: true });
 				next.addEventListener("error", () => next.remove(), { once: true });
-				activeLink.after(next);
+				prev.after(next);
 				activeLink = next;
 			}
 
