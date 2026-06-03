@@ -186,6 +186,56 @@ view.destroy(); // cleans up + removes el
 
 ---
 
+### `enhance(target, mountFn)`
+
+The lifecycle boundary for markup that **already exists** — progressive
+enhancement (server-rendered or hand-written HTML) rather than construction.
+Where [`createView`](#createviewmountfn) clones a `<template>` and you append the
+result, `enhance` **adopts** an existing node and wires behavior onto it in place.
+
+**Parameters:**
+
+- `target` (`HTMLElement | string`) — the element, or a CSS selector resolved with `document.querySelector`.
+- `mountFn` (`(el: HTMLElement, track: Track) => T | void`) — receives the resolved element **first** (then `track`), since here the element is the starting point, not something you build.
+
+**Returns:** `T & { el: HTMLElement; destroy(): void }`.
+
+**Contrast with [`createView`](#createviewmountfn):** `destroy()` runs every tracked
+cleanup but **leaves the node in the document** — `enhance` did not create the
+node, so it does not remove it; teardown only detaches behavior. A page-lifetime
+enhancement typically never calls `destroy()`. Everything else (`refs`,
+`delegate`, `applyBindings`, `observable`, `computed`, `reactTo`) works on the
+existing subtree exactly as on a constructed one; only `fromTemplate` has no role
+— though you may keep a small `<template>` to mint genuinely new nodes (a new list
+row) while the rest stays server-rendered.
+
+**Throws** if `target` is a selector that matches no element.
+
+**Example:**
+
+```ts
+// <ul id="todos"> …server-rendered <li>s… </ul>
+const app = enhance("#todos", (el, track) => {
+	const r = refs(el);
+	const filter = observable("all");
+	// mutate individual nodes; never rebuild the list
+	track(delegate(el, { remove: (e, t) => t.closest("li").remove() }));
+	track(filter.subscribe((f) => {
+		el.querySelectorAll("li").forEach((li) =>
+			li.classList.toggle("hidden", f !== "all" && li.dataset.state !== f)
+		);
+	}));
+	return { r, filter };
+});
+```
+
+See [`example/todo-ssr.html`](./example/todo-ssr.html) for the full pattern
+(server-rendered list, filter by show/hide, derived count, new rows from a
+`<template>`), and contrast it with the construct-everything
+[`example/todo.html`](./example/todo.html).
+
+---
+
 ### `delegate(root, handlers)`
 
 One native listener per event type on `root`. Reads `data-on="event:action"` off

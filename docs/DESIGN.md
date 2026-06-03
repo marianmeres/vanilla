@@ -23,7 +23,9 @@ It is explicitly **not** trying to be a React/Svelte/Solid competitor. It is opt
 
 In scope: reactive state, derived state, explicit subscriptions with cleanup, DOM rendering from HTML `<template>` elements, declarative event wiring, batched updates.
 
-Out of scope (deliberately): routing, a virtual DOM / diffing engine, surgical/fine-grained DOM patching, SSR, a JSX or template compiler, a TypeScript-heavy authoring surface for views (no typed template DSL, no JSX). **Container-level re-render is accepted as good enough.** If a feature requires a diffing engine to work well, that feature is probably out of scope — reconsider before building it.
+Out of scope (deliberately): routing, a virtual DOM / diffing engine, surgical/fine-grained DOM patching, generating SSR markup or hydration-by-diffing, a JSX or template compiler, a TypeScript-heavy authoring surface for views (no typed template DSL, no JSX). **Container-level re-render is accepted as good enough.** If a feature requires a diffing engine to work well, that feature is probably out of scope — reconsider before building it.
+
+> **Note on progressive enhancement (updated).** An earlier version listed "SSR" flatly as out of scope. That conflated two different things; only one stays out. **Out:** generating server HTML, and _hydration that diffs_ server markup against a client render (that needs the diff engine we don't have — §6). **In (added):** _attaching behavior to DOM the server already rendered_ — classic progressive enhancement, the "link a script and bring the page to life" model. This needs no diffing, so it does not breach the boundary above: the server-rendered DOM is the source of truth, and effects mutate individual nodes (or show/hide them) rather than rebuilding a container. The entry point for it is `enhance` (§4.5). This is a clean evolution of scope — principles intact (it honors P2 _more_ strongly), no diff engine introduced — not a relaxation of the no-vdom stance.
 
 > **Note on language (updated).** The original prototype was authored in plain JS, and an earlier version of this section listed "TypeScript-first ergonomics" as out of scope with the source "staying plain JS." The published package is now authored in **TypeScript** — this is the right call for a JSR/npm library: JSR is TS-native, consumers get accurate types for free, and the `.d.ts` is generated from the source rather than hand-maintained. This does **not** change the principles below: there is still no JSX, no typed template DSL, and `get()` stays side-effect-free. The types are lightweight annotations over the same small surface, nothing more.
 
@@ -78,6 +80,8 @@ Rendering = find a `<template>`, clone its content, fill the holes. Holes and wi
 
 **Corollary — single-file components honor this _more_, not less (updated).** A "component" may live as one `.html` file holding both its `<template>`(s) **and** its logic in an inline `<script type="module">` (see §4.6). That is markup and behavior in the same HTML file, with full IDE support for both — the strongest form of "HTML lives in HTML", not a violation of it. The bright line is unchanged: the JS inside still never _builds_ markup from strings; it clones a `<template>`.
 
+**Corollary — progressive enhancement is the purest form of P2 (updated).** `enhance` (§4.5) wires behavior onto markup the server already sent — the HTML is the live document itself, not even a `<template>` clone. "HTML lives in HTML" is at its strongest here. The bright line still holds: the JS builds no markup from strings; a genuinely new node (a new list row) still comes from a small `<template>`.
+
 ### P3 — Use the platform
 
 Prefer native browser primitives over reinventing them: native events with **event delegation**, `<template>` + `cloneNode`, `dataset` for declarative metadata, `queueMicrotask` / `requestAnimationFrame` for scheduling, `Set`/`Map`/`WeakMap` for bookkeeping. `data-*` attributes are an embraced, first-class mechanism, not a hack.
@@ -103,7 +107,7 @@ observable           (explicit reactive value; subscribe -> unsubscribe)
     |
 reactTo / computed   (one effect over many sources; derived values)
     |
-view layer:  fromTemplate, refs, applyBindings, createView, delegate
+view layer:  fromTemplate, refs, applyBindings, createView / enhance, delegate
 ```
 
 Each layer depends only on the ones above it. Nothing reaches back upward. There is no central "framework object" — you compose these functions directly. This flatness is intentional (P5).
@@ -187,6 +191,18 @@ Reads `data-bind="kind:field; …"` and writes values from a plain data object o
 
 The lifecycle boundary (P4). It provides `track(unsub)` to the mount function; every subscription and manual listener is wrapped in `track(...)`. The returned view exposes `destroy()`, which runs all tracked cleanups and removes the root node. **This is the single mechanism that makes P4 enforceable** — if a subscription isn't tracked, it isn't cleaned up. Any new subscribing construct must be trackable.
 
+#### `enhance(target, mountFn)`
+
+The lifecycle boundary's **sibling for markup that already exists** — progressive enhancement instead of construction. Where `createView` clones a `<template>` and you append the result, `enhance` **adopts** a node the server (or hand-authored HTML) already rendered and wires behavior onto it in place. `mountFn` receives the resolved element **first** (then `track`), because here the element is the starting point, not something you build; `target` is that element or a CSS selector resolved with `document.querySelector`.
+
+**Why it exists.** The other entry point assumes the JS _creates_ the DOM (`fromTemplate` → append). But a large, historically dominant use case is the inverse: a page is already rendered (a server, a CMS, plain hand-written HTML) and you want to sprinkle a little reactive behavior onto it. Every other primitive already supported this — `refs`, `delegate`, `applyBindings`, `observable`, `computed`, `reactTo` all operate on an existing subtree; only the _entry point_ was missing. `enhance` is that entry point, and it stays tiny: it shares its cleanup bookkeeping with `createView` (an extracted internal `tracker()`), differing in exactly one way (below).
+
+**The one contrast with `createView`.** `destroy()` runs every tracked cleanup but **leaves the node in the document**. `createView` built its node, so it owns and removes it; `enhance` did not, so teardown only detaches behavior. (A page-lifetime enhancement typically never calls `destroy()` at all — like the deliberately un-tracked global subscription in §5.)
+
+**The shift it enables: DOM as the source of truth.** The construct-everything style treats the observable as truth and the DOM as a disposable projection. Enhancement inverts that — the _server-rendered DOM is truth_, and observables carry only cross-cutting/derived state (the current filter, a derived count, the page theme). On an event you read from the DOM and mutate the one node involved. This **sidesteps the no-surgical-updates limitation (§6) by construction**: you never re-render a container, so server nodes (and their focus/scroll/input state) survive — filtering becomes show/hide on existing rows, toggling flips one row's class, removing is `node.remove()`. The only construction left is minting a _genuinely new_ node, kept in a small `<template>` (P2 holds — no string-built markup). See `example/todo-ssr.html`, the deliberate counterpart to `example/todo.html`.
+
+**Extension guidance.** `enhance` must stay a thin adopt-and-track boundary. It must **not** grow hydration-by-diffing (reconciling server markup against a client render) — that is the vdom we don't have (P5, §1.2, §6). If matching an existing list to fresh state ever feels necessary, the in-scope answers are to re-render that container (`createView` style) or to keep mutating nodes individually — not to add a reconciler.
+
 #### `delegate(root, handlers)`
 
 One native listener per event type on the view root. It reads `data-on="event:action"` off the target (via `closest`), plus optional `data-arg` / `data-id` for parameters, and dispatches to a handler map. Returns a cleanup that removes the listeners.
@@ -250,7 +266,7 @@ Import maps, `Blob`, `fetch`, and dynamic `import()` are all native — no compi
 
 These are **accepted**, not bugs to fix unless scope changes:
 
-- **No surgical DOM updates.** `applyBindings` + container re-render replaces node subtrees wholesale. Re-rendering a list rebuilds its rows. This can lose focus/scroll/input state inside a re-rendered container. Mitigation in practice: render volatile inputs _outside_ frequently-re-rendered containers (as the todo input is), or give a concern its own finer-grained effect. If true in-place patching is ever needed, that's a vdom/diff engine — a scope change to debate, not a quick patch.
+- **No surgical DOM updates.** `applyBindings` + container re-render replaces node subtrees wholesale. Re-rendering a list rebuilds its rows. This can lose focus/scroll/input state inside a re-rendered container. Mitigation in practice: render volatile inputs _outside_ frequently-re-rendered containers (as the todo input is), or give a concern its own finer-grained effect; or, when starting from existing/server-rendered DOM, use `enhance` (§4.5) and mutate individual nodes — show/hide, one-row class flips, `node.remove()` — so no container is rebuilt at all. If true in-place patching of arbitrary updates is ever needed, that's a vdom/diff engine — a scope change to debate, not a quick patch.
 - **No batching across schedulers.** Microtask and rAF queues are independent; an effect on one won't coalesce with an effect on the other. This is fine and expected.
 - **Reference-equality only.** In-place mutation is invisible to the system by design; see the immutable-updates convention.
 - **No `flushSync` yet.** If deferred timing ever needs to be forced synchronous (e.g. read DOM immediately after a `set`), the sanctioned addition is a `flushSync()` that drains the microtask queue on demand. It is _not_ built yet; build it only when a real need appears, and keep it explicit (the caller asks for sync; we don't make `set` sync again).
@@ -283,6 +299,7 @@ If a proposed feature fails 1, 2, 4, or 7, **do not build it silently** — surf
 - **effect** — any function subscribed to one or more observables; re-runs (batched) when they change.
 - **computed** — a read-only observable derived from other observables (§4.4).
 - **view** — a lifecycle-owning unit created by `createView`; owns its subscriptions and disposes them on `destroy()` (§4.5).
+- **enhance / progressive enhancement** — wiring reactive behavior onto DOM that already exists (server-rendered or hand-authored) rather than constructing it; the lifecycle boundary for it is `enhance`, whose `destroy()` detaches behavior but leaves the node in place. The DOM is the source of truth; observables carry only cross-cutting/derived state (§4.5).
 - **track** — the function a view uses to register a cleanup so `destroy()` can run it (§4.5, P4).
 - **delegation** — one native listener on a stable root that dispatches based on `data-on` (§4.5).
 - **flush** — the scheduler running all queued effects once (§4.1).

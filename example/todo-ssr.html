@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>@marianmeres/vanilla — Todo (SSR · enhance · progressive)</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+		<style>
+			/*
+			 * THEME via one attribute on <body>, not per-node JS. Flipping
+			 * body[data-theme] reskins every server-rendered row at once — CSS does
+			 * the fan-out, so the reactive layer only has to set one attribute.
+			 */
+			body[data-theme="dark"] {
+				background-color: #0f172a;
+			}
+			body[data-theme="dark"] .todo-row {
+				background-color: #1e293b;
+				border-color: #334155;
+				color: #f1f5f9;
+			}
+		</style>
+	</head>
+	<body class="bg-slate-50 min-h-screen" data-theme="light">
+		<div class="max-w-md mx-auto p-6">
+			<div class="flex items-center justify-between mb-1">
+				<h1 class="text-2xl font-bold text-slate-800">Todo (SSR)</h1>
+				<button
+					id="theme-toggle"
+					class="text-xs px-2 py-1 rounded bg-slate-200"
+				>
+					toggle theme
+				</button>
+			</div>
+			<p class="text-xs text-slate-400 mb-4">
+				@marianmeres/vanilla · <strong>enhance</strong> · the markup below is
+				server-rendered and brought to life in place — no full
+				<code>&lt;template&gt;</code>, no client rebuild of the list.
+			</p>
+
+			<!--
+				THIS IS THE "SERVER OUTPUT".
+				Everything inside #app is real HTML the server produced: the shell,
+				the controls, AND the initial todo rows. There is NO tpl-app mega
+				template here. The client adopts #app with `enhance(...)` and wires
+				behavior onto these exact nodes — it never throws them away.
+
+				Because the page is functional HTML before any JS runs, it also works
+				with JS disabled (the form would just need a real action) — the
+				hallmark of progressive enhancement.
+			-->
+			<div id="app">
+				<div class="flex gap-2 mb-3">
+					<input
+						data-ref="input"
+						class="flex-1 border rounded px-3 py-2 text-sm"
+						placeholder="What needs doing?"
+					/>
+					<button
+						data-on="click:add"
+						class="bg-blue-600 text-white px-4 rounded text-sm"
+					>
+						Add
+					</button>
+				</div>
+
+				<div class="flex gap-2 mb-3 text-xs">
+					<button data-on="click:filter" data-arg="all" class="filter-btn px-2 py-1 rounded bg-slate-200">
+						all
+					</button>
+					<button data-on="click:filter" data-arg="active" class="filter-btn px-2 py-1 rounded bg-slate-200">
+						active
+					</button>
+					<button data-on="click:filter" data-arg="done" class="filter-btn px-2 py-1 rounded bg-slate-200">
+						done
+					</button>
+					<span data-ref="count" class="ml-auto self-center text-slate-400"></span>
+				</div>
+
+				<ul data-ref="list" class="space-y-1">
+					<!-- Server-rendered row #1 (done) -->
+					<li
+						data-id="1"
+						class="todo-row flex items-center gap-2 border rounded px-3 py-2 bg-white border-slate-200 text-slate-800"
+					>
+						<input type="checkbox" data-on="change:toggle" checked />
+						<span class="flex-1 text-sm line-through opacity-50">Batch on microtask</span>
+						<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+					</li>
+					<!-- Server-rendered row #2 (active) -->
+					<li
+						data-id="2"
+						class="todo-row flex items-center gap-2 border rounded px-3 py-2 bg-white border-slate-200 text-slate-800"
+					>
+						<input type="checkbox" data-on="change:toggle" />
+						<span class="flex-1 text-sm">Derive with computed</span>
+						<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+					</li>
+				</ul>
+
+				<p
+					data-ref="empty"
+					class="text-slate-400 text-sm text-center py-4 hidden"
+				>
+					Nothing here
+				</p>
+			</div>
+		</div>
+
+		<!--
+			The ONLY template that remains: a prototype for a *brand-new* row. The
+			server can emit this inert markup happily. Existing rows are never built
+			from it — it is used only when the user adds a todo. Everything already
+			on the page stays as the server rendered it.
+		-->
+		<template id="tpl-item">
+			<li class="todo-row flex items-center gap-2 border rounded px-3 py-2" data-bind="class:rowClass">
+				<input type="checkbox" data-on="change:toggle" data-bind="checked:done" />
+				<span data-bind="text:text;class:textClass" class="flex-1 text-sm"></span>
+				<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+			</li>
+		</template>
+
+		<!--
+			App logic. Contrast this with todo.html (the construct-everything
+			sibling): there, the view is cloned from a <template> and appended. Here,
+			the DOM already exists — we ADOPT it. The DOM is the source of truth;
+			observables carry only the cross-cutting bits (current filter, the
+			derived "N left", the page theme).
+			Build with:  deno task example:build      (or example:watch)
+		-->
+		<script type="module">
+			import {
+				applyBindings,
+				delegate,
+				enhance,
+				fromTemplate,
+				observable,
+				refs,
+			} from "./dist/bundle.js";
+
+			/* GLOBAL theme — page-level, outlives any view (same idea as todo.html).
+			 * Under enhancement it barely does anything in JS: flip one attribute and
+			 * CSS reskins every server-rendered row, including ones added later. */
+			const theme = observable(
+				document.body.dataset.theme === "dark" ? "dark" : "light",
+			);
+			theme.subscribe((t) => {
+				document.body.dataset.theme = t;
+			});
+			document.getElementById("theme-toggle").onclick = () =>
+				theme.update((t) => (t === "light" ? "dark" : "light"));
+
+			/* THE ENHANCEMENT.
+			 * `enhance` adopts the existing #app node and passes it in. No
+			 * fromTemplate for the shell, no appendChild — it is already on the page.
+			 * destroy() (if we ever called it) would detach behavior but LEAVE the
+			 * markup in place. */
+			const app = enhance("#app", (el, track) => {
+				const r = refs(el);
+
+				/* Base class for a freshly-minted row. Includes `todo-row` so the
+				 * CSS theme rules above catch it too. */
+				const ROW_CLASS =
+					"todo-row flex items-center gap-2 border rounded px-3 py-2 " +
+					"bg-white border-slate-200 text-slate-800";
+
+				/* INITIAL STATE READ FROM THE SERVER DOM — not from a JS literal.
+				 * New ids continue after the highest one the server rendered. */
+				const ids = [...r.list.querySelectorAll("[data-id]")].map(
+					(li) => +li.dataset.id,
+				);
+				let nextId = (ids.length ? Math.max(...ids) : 0) + 1;
+
+				/* VIEW-SCOPED reactive state — the only things NOT held by the DOM. */
+				const filter = observable("all");
+				const remaining = observable(0); // seeded from the DOM by recount()
+
+				/* ---- helpers: each mutates INDIVIDUAL nodes; the list is never
+				 * rebuilt, so server nodes (and their focus/scroll/state) survive ---- */
+
+				const isDone = (li) =>
+					li.querySelector("input[type=checkbox]").checked;
+
+				// "N left" is DERIVED FROM THE DOM (unchecked boxes), then pushed into
+				// an observable so the count text updates reactively.
+				function recount() {
+					remaining.set(
+						r.list.querySelectorAll("input[type=checkbox]:not(:checked)")
+							.length,
+					);
+				}
+
+				// Filtering = SHOW/HIDE existing rows. No re-render. Server nodes stay.
+				function applyFilter() {
+					const f = filter.get();
+					let visible = 0;
+					r.list.querySelectorAll("li[data-id]").forEach((li) => {
+						const show = f === "all"
+							? true
+							: f === "active"
+							? !isDone(li)
+							: isDone(li);
+						li.classList.toggle("hidden", !show);
+						if (show) visible++;
+					});
+					r.empty.classList.toggle("hidden", visible !== 0);
+				}
+
+				// Toggle one row's "done" styling (the checkbox itself is flipped
+				// natively by the browser).
+				function styleDone(li, done) {
+					const span = li.querySelector("span");
+					span.classList.toggle("line-through", done);
+					span.classList.toggle("opacity-50", done);
+				}
+
+				function addTodo(text) {
+					text = text.trim();
+					if (!text) return;
+					// The ONE bit of construction left: a brand-new row is minted from
+					// the inert <template>. Existing rows are untouched.
+					const li = fromTemplate("tpl-item");
+					li.dataset.id = nextId++;
+					applyBindings(li, {
+						done: false,
+						text,
+						rowClass: ROW_CLASS,
+						textClass: "flex-1 text-sm",
+					});
+					r.list.appendChild(li);
+					r.input.value = "";
+					r.input.focus();
+					recount();
+					applyFilter(); // a new row may need hiding under active/done
+				}
+
+				/* ---- behavior, delegated onto the existing root ---- */
+				track(
+					delegate(el, {
+						add: () => addTodo(r.input.value),
+						toggle: (e, t) => {
+							const li = t.closest("[data-id]");
+							styleDone(li, t.checked);
+							recount();
+							applyFilter(); // its filter membership may have changed
+						},
+						remove: (e, t) => {
+							t.closest("[data-id]").remove();
+							recount();
+							applyFilter();
+						},
+						filter: (e, t) => filter.set(t.dataset.arg),
+					}),
+				);
+
+				const onKey = (e) => {
+					if (e.key === "Enter") addTodo(r.input.value);
+				};
+				r.input.addEventListener("keydown", onKey);
+				track(() => r.input.removeEventListener("keydown", onKey));
+
+				/* FILTER: reactively apply visibility + highlight the active button.
+				 * `immediate` (default) runs it once on mount, syncing the highlight
+				 * to the server-rendered list. */
+				track(
+					filter.subscribe(() => {
+						applyFilter();
+						el.querySelectorAll(".filter-btn").forEach((b) => {
+							const active = b.dataset.arg === filter.get();
+							b.className = "filter-btn px-2 py-1 rounded " +
+								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+						});
+					}),
+				);
+
+				/* COUNT: seed `remaining` from the DOM, then let the subscription keep
+				 * the text in sync. Seed BEFORE subscribing so the first (immediate)
+				 * run already shows the right number. */
+				recount();
+				track(
+					remaining.subscribe((n) => {
+						r.count.textContent = n + " left";
+					}),
+				);
+
+				return { r };
+			});
+
+			// expose for console poking
+			globalThis.app = app;
+			globalThis.theme = theme;
+		</script>
+	</body>
+</html>

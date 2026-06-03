@@ -284,25 +284,97 @@ export function applyBindings(root: Element, data: Record<string, unknown>): voi
 }
 
 /**
- * The lifecycle boundary. `mountFn` receives `track(unsub)`; wrap every
- * subscription and manual listener in `track(...)`. The returned view exposes
- * `destroy()`, which runs all tracked cleanups and removes the root node.
+ * Internal: the cleanup collector shared by the two lifecycle boundaries
+ * ({@link createView}, {@link enhance}). `track()` registers an unsubscribe;
+ * `dispose()` runs them all and clears the list. The boundaries differ only in
+ * what they do with their root node on teardown — not in how they track.
+ */
+function tracker(): { track: Track; dispose: Unsubscribe } {
+	const cleanups: Unsubscribe[] = [];
+	return {
+		track: (unsub) => {
+			cleanups.push(unsub);
+			return unsub;
+		},
+		dispose: () => {
+			cleanups.forEach((fn) => fn());
+			cleanups.length = 0;
+		},
+	};
+}
+
+/**
+ * The lifecycle boundary for views you CONSTRUCT. `mountFn` receives
+ * `track(unsub)`; wrap every subscription and manual listener in `track(...)`. The
+ * returned view exposes `destroy()`, which runs all tracked cleanups and removes
+ * the root node — `createView` built that node (typically via {@link fromTemplate}),
+ * so it owns it and tears it down. To wire behavior onto a node that ALREADY
+ * EXISTS (server-rendered or hand-written markup) without owning/removing it, use
+ * {@link enhance}.
  */
 export function createView<T extends { el?: HTMLElement }>(
 	mountFn: (track: Track) => T,
 ): T & { destroy(): void } {
-	const cleanups: Unsubscribe[] = [];
-	const track: Track = (unsub) => {
-		cleanups.push(unsub);
-		return unsub;
-	};
+	const { track, dispose } = tracker();
 	const api = mountFn(track) ?? ({} as T);
 	return {
 		...api,
 		destroy() {
-			cleanups.forEach((fn) => fn());
-			cleanups.length = 0;
+			dispose();
 			api.el?.remove();
+		},
+	};
+}
+
+/**
+ * The lifecycle boundary for markup that ALREADY EXISTS — progressive enhancement
+ * rather than construction. Where {@link createView} clones a `<template>` and you
+ * append the result, `enhance` ADOPTS a node the server (or hand-written HTML) has
+ * already rendered and wires behavior onto it in place. This is the "link a script
+ * and bring an existing page to life" model.
+ *
+ *     <ul id="todos"> …server-rendered <li>s… </ul>
+ *
+ *     const app = enhance("#todos", (el, track) => {
+ *       const r = refs(el);
+ *       track(delegate(el, { remove: (e, t) => t.closest("li").remove() }));
+ *       return { r };
+ *     });
+ *
+ * `mountFn` receives the resolved element FIRST (then `track`), because under
+ * enhancement the element is the starting point, not something you build. `target`
+ * is that element or a CSS selector resolved with `document.querySelector`.
+ *
+ * The one meaningful contrast with {@link createView}: `destroy()` runs every
+ * tracked cleanup but LEAVES THE NODE IN THE DOCUMENT. `enhance` did not create the
+ * node, so it does not remove it — teardown only detaches the behavior that was
+ * added. (A page-lifetime enhancement usually never calls `destroy()` at all.)
+ *
+ * Everything else is unchanged: `refs`, `delegate`, `applyBindings`, `observable`,
+ * `computed` and `reactTo` all operate on an existing subtree exactly as on a
+ * constructed one. Only `fromTemplate` (build-from-scratch) has no role here —
+ * though you may still keep a small `<template>` to mint genuinely new nodes (a new
+ * list row, say) while the rest of the markup stays server-rendered.
+ *
+ * @throws if `target` is a selector that matches no element.
+ */
+export function enhance<T extends object = Record<never, never>>(
+	target: HTMLElement | string,
+	mountFn: (el: HTMLElement, track: Track) => T | void,
+): T & { el: HTMLElement; destroy(): void } {
+	const el = typeof target === "string"
+		? document.querySelector<HTMLElement>(target)
+		: target;
+	if (!el) throw new Error(`enhance: no element matches ${JSON.stringify(target)}`);
+	const { track, dispose } = tracker();
+	const api = (mountFn(el, track) ?? {}) as T;
+	return {
+		...api,
+		el,
+		destroy() {
+			dispose();
+			// Unlike createView, the node is LEFT IN PLACE — enhance adopts a node it
+			// did not create, so teardown only detaches behavior.
 		},
 	};
 }

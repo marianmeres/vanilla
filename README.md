@@ -137,6 +137,52 @@ irregular cases: `text`→`textContent`, `html`→`innerHTML`, `class`→`classN
 `text:` (textContent) is XSS-safe; `html:`/`innerHTML:` are unsafe sinks — use
 them for **trusted content only**.
 
+## Progressive enhancement (`enhance`)
+
+The view above is **constructed** — cloned from a `<template>` and appended. The
+mirror image is **enhancing markup that already exists** (server-rendered, from a
+CMS, or hand-authored): link a script and bring the page to life. `enhance` adopts
+an existing node instead of building one:
+
+```ts
+import { delegate, enhance, observable, refs } from "@marianmeres/vanilla";
+
+// <ul id="todos"> …server-rendered <li data-id data-state>s… </ul>
+const app = enhance("#todos", (el, track) => {
+	// adopt, don't fromTemplate
+	const r = refs(el);
+	const filter = observable("all");
+	track(delegate(el, { remove: (e, t) => t.closest("li").remove() }));
+	// filter by show/hide — the list is never rebuilt
+	track(
+		filter.subscribe((f) =>
+			el.querySelectorAll("li").forEach((li) =>
+				li.classList.toggle("hidden", f !== "all" && li.dataset.state !== f)
+			)
+		),
+	);
+	return { r, filter };
+});
+```
+
+It is the same machinery as `createView`, with two differences: it takes an
+**existing element** (or a CSS selector) and passes it to `mountFn` **first**, and
+its `destroy()` runs cleanups but **leaves the node in place** (it didn't create
+the node, so it doesn't remove it). Everything else — `refs`, `delegate`,
+`applyBindings`, `observable`, `computed`, `reactTo` — works on the existing
+subtree exactly as on a constructed one; only `fromTemplate` has no role.
+
+The natural style here is **DOM as the source of truth**: the server-rendered
+markup holds the state, and observables carry only the cross-cutting bits (current
+filter, a derived count, the theme). Because you mutate individual nodes — filter
+by show/hide, flip one row's class, `node.remove()` — the list is never rebuilt, so
+server nodes keep their focus/scroll/input state. The only thing still _built_ is a
+brand-new node, minted from a small `<template>`.
+
+See [`example/todo-ssr.html`](./example/todo-ssr.html) — the same todo app,
+server-rendered and enhanced in place — next to the construct-everything
+[`example/todo.html`](./example/todo.html).
+
 ## Composition (components)
 
 A **component is just a factory that returns a view**. A parent composes children
@@ -225,24 +271,28 @@ deno task example:watch   # rebuild on change
 
 - [`example/todo.html`](./example/todo.html) — single-file todo app (filtering,
   derived count, theming, batched + rAF effects).
+- [`example/todo-ssr.html`](./example/todo-ssr.html) — the same app, but
+  **server-rendered and enhanced in place** with `enhance`: DOM as the source of
+  truth, filter by show/hide, no client rebuild of the list.
 - [`example/multi-component/`](./example/multi-component/index.html) — the same
   app split into **single-file components** with **props** down and callbacks up.
 
 ## API
 
-| Export                           | Summary                                                              |
-| -------------------------------- | -------------------------------------------------------------------- |
-| `observable(value)`              | Read/write reactive value: `get` / `set` / `update` / `subscribe`.   |
-| `reactTo(sources, fn, opts?)`    | One effect over many observables; one combined unsubscribe.          |
-| `computed(sources, calc, opts?)` | Read-only derived observable; fans out only when the result changes. |
-| `fromTemplate(id)`               | Clone the first element of a `<template>`'s content.                 |
-| `refs(root)`                     | Collect `[data-ref]` nodes into `{ name: el }`.                      |
-| `applyBindings(root, data)`      | Apply `data-bind` rules (data → DOM).                                |
-| `createView(mountFn)`            | Lifecycle boundary; provides `track`, returns a view with `destroy`. |
-| `delegate(root, handlers)`       | One delegated listener per event type; reads `data-on`.              |
-| `mount(track, slot, vf, props?)` | Mount a child view (or factory + props); tracks its `destroy`.       |
-| `loadTemplates(url)`             | Adopt another HTML file's `<template>`s into the document.           |
-| `loadComponent(url)`             | Load a single-file component; return its inline module's exports.    |
+| Export                           | Summary                                                                                |
+| -------------------------------- | -------------------------------------------------------------------------------------- |
+| `observable(value)`              | Read/write reactive value: `get` / `set` / `update` / `subscribe`.                     |
+| `reactTo(sources, fn, opts?)`    | One effect over many observables; one combined unsubscribe.                            |
+| `computed(sources, calc, opts?)` | Read-only derived observable; fans out only when the result changes.                   |
+| `fromTemplate(id)`               | Clone the first element of a `<template>`'s content.                                   |
+| `refs(root)`                     | Collect `[data-ref]` nodes into `{ name: el }`.                                        |
+| `applyBindings(root, data)`      | Apply `data-bind` rules (data → DOM).                                                  |
+| `createView(mountFn)`            | Lifecycle boundary; provides `track`, returns a view with `destroy`.                   |
+| `enhance(target, mountFn)`       | Adopt existing/server-rendered DOM; like `createView` but keeps the node on `destroy`. |
+| `delegate(root, handlers)`       | One delegated listener per event type; reads `data-on`.                                |
+| `mount(track, slot, vf, props?)` | Mount a child view (or factory + props); tracks its `destroy`.                         |
+| `loadTemplates(url)`             | Adopt another HTML file's `<template>`s into the document.                             |
+| `loadComponent(url)`             | Load a single-file component; return its inline module's exports.                      |
 
 See [API.md](./API.md) for the full reference (parameters, returns, examples).
 

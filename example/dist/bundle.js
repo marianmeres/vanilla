@@ -111,19 +111,40 @@ function applyBindings(root, data) {
         });
     });
 }
-function createView(mountFn) {
+function tracker() {
     const cleanups = [];
-    const track = (unsub)=>{
-        cleanups.push(unsub);
-        return unsub;
+    return {
+        track: (unsub)=>{
+            cleanups.push(unsub);
+            return unsub;
+        },
+        dispose: ()=>{
+            cleanups.forEach((fn)=>fn());
+            cleanups.length = 0;
+        }
     };
+}
+function createView(mountFn) {
+    const { track, dispose } = tracker();
     const api = mountFn(track) ?? {};
     return {
         ...api,
         destroy () {
-            cleanups.forEach((fn)=>fn());
-            cleanups.length = 0;
+            dispose();
             api.el?.remove();
+        }
+    };
+}
+function enhance(target, mountFn) {
+    const el = typeof target === "string" ? document.querySelector(target) : target;
+    if (!el) throw new Error(`enhance: no element matches ${JSON.stringify(target)}`);
+    const { track, dispose } = tracker();
+    const api = mountFn(el, track) ?? {};
+    return {
+        ...api,
+        el,
+        destroy () {
+            dispose();
         }
     };
 }
@@ -203,6 +224,7 @@ export { fromTemplate as fromTemplate };
 export { refs as refs };
 export { applyBindings as applyBindings };
 export { createView as createView };
+export { enhance as enhance };
 export { delegate as delegate };
 export { mount as mount };
 export { loadTemplates as loadTemplates };
