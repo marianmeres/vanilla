@@ -1,4 +1,4 @@
-# Design Document — `reactive-vanilla` (working title)
+# Design Document — `@marianmeres/vanilla`
 
 > A tiny, explicit reactive DOM library for vanilla JS prototyping.
 > This document is the **rationale and constitution** for the library. It exists so that any contributor — human or coding agent — understands _how we arrived here_, _what problem each piece solves_, and _which principles to uphold when adding features_. When in doubt, the principles in §2 win over convenience.
