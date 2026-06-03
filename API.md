@@ -62,7 +62,9 @@ source changes, caches the result, and fans out **only when the result changes**
 **Parameters:**
 
 - `sources` (`readonly ReadonlyObservable<unknown>[]`) — the dependencies.
-- `calc` (`() => T`) — pure derivation of the value.
+- `calc` (`() => T`) — **pure** derivation of the value. Read sources, return a
+  result; do **not** write an observable. Calling `set()` inside `calc` **throws**
+  (see [Guards](#guards)) — put side effects in a [`reactTo`](#reacttosources-fn-opts) effect instead.
 - `opts` (`{ scheduler?: SchedulerKind }`, optional) — default `"microtask"`.
 
 **Returns:** [`ReadonlyObservable<T>`](#readonlyobservablet) — `{ get, subscribe }`.
@@ -329,6 +331,54 @@ mount(track, r.filterSlot, createFilterBar, { filter, onPick });
 
 ---
 
+## Guards
+
+Two safety rails catch the two ways reactive code loops on itself. Both throw —
+loudly — rather than letting the page hang silently.
+
+### Compute purity
+
+A [`computed`](#computedsources-calc-opts) `calc` must be a **pure derivation**:
+read sources, return a value, write nothing. Calling `observable.set()` from
+inside `calc` throws immediately:
+
+```ts
+computed([a], () => {
+  b.set(1);       // ✗ throws — calc must not write
+  return a.get();
+});
+```
+
+This is the impure-computed footgun other libraries forbid (MobX throws on it
+too): a derivation that secretly mutates state is a hidden effect and a prime
+source of update loops. Writing state from a [`reactTo`](#reacttosources-fn-opts)
+effect is **fine** — only `calc` is fenced.
+
+### Update depth (loop guard)
+
+Effects are batched (deferred to a flush), so a feedback loop — `a`'s effect
+writes `b`, `b`'s effect writes `a`, forever — is **not** a synchronous recursion
+that overflows the stack and throws. It is an endless chain of flushes that
+freezes the tab _silently_. The scheduler counts consecutive flush **hops** and
+throws once the chain passes [`MAX_UPDATE_DEPTH`](#max_update_depth) (1000):
+
+```
+Error: vanilla: maximum update depth exceeded (1000) — likely a feedback loop …
+```
+
+Notes:
+
+- A loop that **converges** (e.g. clamps to a fixed point) trips the
+  reference-equality guard and stops well short of the limit — no error.
+- The count is per **hop**, not per write: a single change fanning out to
+  thousands of effects is one hop, never a false positive.
+- The throw happens inside a microtask flush, so it surfaces as an uncaught
+  error / global `"error"` event, **not** at the `set()` call site.
+- A loop routed through a real async gap (`setTimeout`/`await`) starts a fresh
+  chain each hop and slips past — as it would past any synchronous guard.
+
+---
+
 ## Props
 
 Not a function — a **convention**. A component factory takes one `props` object
@@ -350,6 +400,19 @@ function createAddBar({ placeholder, onAdd }) { // value + callback props
 	});
 }
 ```
+
+---
+
+## Constants
+
+### `MAX_UPDATE_DEPTH`
+
+```ts
+const MAX_UPDATE_DEPTH = 1000;
+```
+
+The flush-chain length at which the scheduler assumes a runaway feedback loop and
+throws. See [Update depth (loop guard)](#update-depth-loop-guard).
 
 ---
 

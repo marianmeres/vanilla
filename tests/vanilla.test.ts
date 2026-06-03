@@ -1,5 +1,5 @@
-import { assertEquals } from "@std/assert";
-import { computed, observable, reactTo } from "../src/vanilla.ts";
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
+import { computed, MAX_UPDATE_DEPTH, observable, reactTo } from "../src/vanilla.ts";
 
 /**
  * Drain the scheduler. A macrotask boundary lets the entire microtask chain
@@ -115,4 +115,108 @@ Deno.test("computed: fans out only when the derived result changes", async () =>
 	list.update((l) => [...l, { done: false }]);
 	await flush();
 	assertEquals(runs, 1);
+});
+
+/* ----------------------------------------------------------------------------
+ * Guards: the compute-purity fence and the update-depth loop guard.
+ * -------------------------------------------------------------------------- */
+
+/**
+ * Capture uncaught errors. The loop guard throws from *inside* a microtask
+ * flush, so the error never reaches the `set()` call that started the chain —
+ * it surfaces as a global `"error"` event. `preventDefault()` stops it from
+ * failing the test run; we assert on what we captured.
+ */
+function captureUncaught(): { errors: Error[]; stop: () => void } {
+	const errors: Error[] = [];
+	const onError = (e: Event) => {
+		e.preventDefault();
+		errors.push((e as ErrorEvent).error);
+	};
+	globalThis.addEventListener("error", onError);
+	return { errors, stop: () => globalThis.removeEventListener("error", onError) };
+}
+
+Deno.test("computed: calc that writes an observable throws (purity guard)", () => {
+	const a = observable(0);
+	const other = observable(0);
+	assertThrows(
+		() =>
+			computed([a], () => {
+				other.set(1); // illegal: a write inside calc
+				return a.get();
+			}),
+		Error,
+		"pure derivation",
+	);
+});
+
+Deno.test("reactTo: an effect MAY write observables (only calc is fenced)", async () => {
+	// The purity fence applies to computed's calc, not to effects. An effect
+	// writing another observable is a normal, supported pattern.
+	const a = observable(0);
+	const b = observable(0);
+	reactTo([a], () => b.set(a.get() * 2), { immediate: false });
+	a.set(5);
+	await flush();
+	assertEquals(b.get(), 10);
+});
+
+Deno.test("scheduler: a non-converging feedback loop throws (loop guard)", async () => {
+	const a = observable(0);
+	const b = observable(0);
+	// a writes b writes a … and the value always changes, so the equality guard
+	// never stops it — a genuine runaway.
+	reactTo([a], () => b.set(b.get() + 1), { immediate: false });
+	reactTo([b], () => a.set(a.get() + 1), { immediate: false });
+
+	const cap = captureUncaught();
+	a.set(1); // kick off the loop
+	await flush();
+	cap.stop();
+
+	assertEquals(cap.errors.length, 1);
+	assert(cap.errors[0] instanceof Error);
+	assertStringIncludes(cap.errors[0].message, "maximum update depth");
+});
+
+Deno.test("scheduler: a converging feedback loop settles (no throw)", async () => {
+	const a = observable(0);
+	const b = observable(0);
+	// a and b still write each other, but both CLAMP at 10. Once they reach the
+	// fixed point the equality guard stops the chain — well short of the limit.
+	reactTo([a], () => b.set(Math.min(a.get(), 10)), { immediate: false });
+	reactTo([b], () => a.set(Math.min(b.get(), 10)), { immediate: false });
+
+	const cap = captureUncaught();
+	a.set(50);
+	await flush();
+	cap.stop();
+
+	assertEquals(cap.errors, []);
+	assertEquals(a.get(), 10);
+	assertEquals(b.get(), 10);
+});
+
+Deno.test("scheduler: wide fan-out within one flush is not mistaken for a loop", async () => {
+	// chainDepth counts flush *hops*, not how WIDE a single hop fans out. Here
+	// one source change writes more than MAX_UPDATE_DEPTH sinks in a single hop;
+	// each sink has a terminal subscriber, so each write enqueues. That is one
+	// hop, not thousands — it must NOT trip the guard.
+	const src = observable(0);
+	const n = MAX_UPDATE_DEPTH + 5; // wider than the loop limit, on purpose
+	const sinks = Array.from({ length: n }, () => observable(0));
+	sinks.forEach((sink) => sink.subscribe(() => {}, { immediate: false }));
+	sinks.forEach((sink, i) =>
+		reactTo([src], () => sink.set(src.get() + i), { immediate: false })
+	);
+
+	const cap = captureUncaught();
+	src.set(1); // one hop: fans out to n sink writes
+	await flush();
+	cap.stop();
+
+	assertEquals(cap.errors, []);
+	assertEquals(sinks[0].get(), 1);
+	assertEquals(sinks[n - 1].get(), n); // 1 + (n - 1)
 });

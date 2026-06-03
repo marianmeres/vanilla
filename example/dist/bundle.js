@@ -1,3 +1,4 @@
+const MAX_UPDATE_DEPTH = 1000;
 const Scheduler = (()=>{
     const queues = {
         microtask: {
@@ -11,17 +12,35 @@ const Scheduler = (()=>{
             arm: (cb)=>requestAnimationFrame(cb)
         }
     };
+    let flushing = false;
+    let chainDepth = 0;
     function flush(kind) {
         const q = queues[kind];
         const entries = q.map;
         q.map = new Map();
         q.scheduled = false;
-        entries.forEach((read, fn)=>fn(read()));
+        flushing = true;
+        try {
+            entries.forEach((read, fn)=>fn(read()));
+        } finally{
+            flushing = false;
+        }
     }
     function enqueue(fn, kind, read) {
         const q = queues[kind] ?? queues.microtask;
+        const arming = !q.scheduled;
+        if (arming) {
+            if (flushing) {
+                if (++chainDepth > 1000) {
+                    chainDepth = 0;
+                    throw new Error(`vanilla: maximum update depth exceeded (${1000}) — ` + `likely a feedback loop where an effect's set() retriggers ` + `itself (a writes b, b writes a, …). Check your reactTo/computed ` + `wiring, or make the loop converge so the equality guard can ` + `stop it.`);
+                }
+            } else {
+                chainDepth = 0;
+            }
+        }
         q.map.set(fn, read);
-        if (!q.scheduled) {
+        if (arming) {
             q.scheduled = true;
             q.arm(()=>flush(kind));
         }
@@ -30,6 +49,15 @@ const Scheduler = (()=>{
         enqueue
     };
 })();
+let computing = 0;
+function withinCompute(calc) {
+    computing++;
+    try {
+        return calc();
+    } finally{
+        computing--;
+    }
+}
 function observable(value) {
     const subs = new Map();
     function notify() {
@@ -38,6 +66,9 @@ function observable(value) {
     const self = {
         get: ()=>value,
         set (v) {
+            if (computing > 0) {
+                throw new Error("vanilla: cannot set() an observable from inside a computed's " + "calc — calc must be a pure derivation of its sources (no writes " + "/ side effects). Move the write into a reactTo(...) effect.");
+            }
             if (v === value) return;
             value = v;
             notify();
@@ -64,8 +95,8 @@ function reactTo(sources, fn, { immediate = true, scheduler = "microtask" } = {}
     return ()=>unsubs.forEach((u)=>u());
 }
 function computed(sources, calc, { scheduler = "microtask" } = {}) {
-    const out = observable(calc());
-    reactTo(sources, ()=>out.set(calc()), {
+    const out = observable(withinCompute(calc));
+    reactTo(sources, ()=>out.set(withinCompute(calc)), {
         immediate: false,
         scheduler
     });
@@ -217,6 +248,7 @@ function loadComponent(url) {
     }
     return p;
 }
+export { MAX_UPDATE_DEPTH as MAX_UPDATE_DEPTH };
 export { observable as observable };
 export { reactTo as reactTo };
 export { computed as computed };

@@ -47,6 +47,11 @@ scripts/build-npm.ts      — npm dist build
    global.
 7. **Stay small.** The core is one readable file (P5). A helper earns its place
    only by removing a _recurring_ sharp edge.
+8. **Derivation vs effect.** A `computed`'s `calc` must be **pure** — read sources,
+   return a value, never `set()` (it throws if you do). Writes belong in a
+   `reactTo` effect. Non-converging feedback loops throw after
+   `MAX_UPDATE_DEPTH` flushes instead of freezing the tab; a converging loop is
+   fine (it rides the equality guard). See DESIGN §4.1/§4.4.
 
 ## Before Making Changes
 

@@ -80,6 +80,27 @@ current call stack); pass `{ scheduler: "raf" }` for frame-rate-bound effects
 reactTo([scrollY], render, { scheduler: "raf" });
 ```
 
+### Guardrails against reactive loops
+
+Two cases throw loudly instead of looping silently:
+
+```ts
+// 1. A computed's calc must be PURE — it derives, it must not write.
+computed([a], () => {
+  b.set(1);          // ✗ throws — move side effects into a reactTo(...) effect
+  return a.get();
+});
+
+// 2. A non-converging feedback loop (a writes b writes a, forever) is caught
+//    after MAX_UPDATE_DEPTH flushes — batching would otherwise freeze the tab
+//    silently. A loop that *converges* trips the equality guard and is fine.
+reactTo([a], () => b.set(b.get() + 1));
+reactTo([b], () => a.set(a.get() + 1)); // ✗ "maximum update depth exceeded"
+```
+
+Writing state from a `reactTo` effect is a normal, supported pattern — only a
+`computed`'s `calc` is fenced. See [API.md → Guards](./API.md#guards).
+
 ### If these names look familiar
 
 `observable` / `computed` are the **Knockout / MobX / Vue** vocabulary, not new

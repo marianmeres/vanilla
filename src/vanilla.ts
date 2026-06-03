@@ -41,7 +41,12 @@ export interface SubscribeOptions {
 export interface Observable<T> {
 	/** Read the current value. No side effects — unlike a signal, reading tracks nothing. */
 	get(): T;
-	/** Write a value. No-op if `v === current` (reference-equality guard). */
+	/**
+	 * Write a value. No-op if `v === current` (reference-equality guard).
+	 * **Throws** if called from inside a {@link computed} `calc` — a derivation
+	 * must be pure (see the compute guard). Writing from a {@link reactTo} effect
+	 * is fine.
+	 */
 	set(v: T): void;
 	/** Sugar for `set(fn(get()))`. */
 	update(fn: (prev: T) => T): void;
@@ -76,6 +81,19 @@ export type DelegateHandler = (e: Event, el: HTMLElement) => void;
  * one burst runs once (dedup by identity). The mapped value is a `read()` thunk
  * supplying the current value to pass into the effect on flush — last write wins,
  * so the effect always sees final state.
+ *
+ * **Loop guard.** Because effects are deferred to a flush, a feedback loop —
+ * effect A's `set()` retriggers effect B's `set()` retriggers A… — is *not* a
+ * synchronous recursion that overflows the stack and throws. It is an endless
+ * chain of flushes, each arming the next; with the microtask scheduler that
+ * chain never yields, freezing the tab **silently** (no error, no stack trace).
+ * So we restore the missing diagnostic: count consecutive flushes that were
+ * armed from *inside* a running flush (the chain length) and throw once it
+ * passes {@link MAX_UPDATE_DEPTH}. A loop that *converges* trips the equality
+ * guard and stops well short of the limit; only a non-terminating one reaches
+ * it. (A loop that bounces through a real async gap — a `set()` inside a
+ * `setTimeout`/`await` — starts a fresh chain each time and slips past, as it
+ * would past any synchronous guard.)
  * ========================================================================== */
 
 type Effect = (value?: unknown) => void;
@@ -85,6 +103,9 @@ interface Queue {
 	scheduled: boolean;
 	arm: (cb: () => void) => void;
 }
+
+/** Flush-chain length at which the scheduler assumes a runaway feedback loop. */
+export const MAX_UPDATE_DEPTH = 1000;
 
 const Scheduler = (() => {
 	const queues: Record<SchedulerKind, Queue> = {
@@ -100,18 +121,50 @@ const Scheduler = (() => {
 		},
 	};
 
+	// Loop-guard state (see the block comment above).
+	let flushing = false; // true while an effect queue is being drained
+	let chainDepth = 0; // consecutive flushes armed from inside a flush
+
 	function flush(kind: SchedulerKind) {
 		const q = queues[kind];
 		const entries = q.map;
 		q.map = new Map();
 		q.scheduled = false;
-		entries.forEach((read, fn) => fn(read())); // each effect runs ONCE, sees final state
+		flushing = true;
+		try {
+			entries.forEach((read, fn) => fn(read())); // each effect runs ONCE, sees final state
+		} finally {
+			flushing = false;
+		}
 	}
 
 	function enqueue(fn: Effect, kind: SchedulerKind, read: () => unknown) {
 		const q = queues[kind] ?? queues.microtask;
+		// `arming` === this enqueue is the one that schedules the next flush.
+		// Counting per-arm (not per-enqueue) makes chainDepth a count of flush
+		// *hops*, independent of how WIDE the fan-out is at each hop: a 5000-way
+		// fan-out is one hop, only a deep re-entrant chain climbs.
+		const arming = !q.scheduled;
+		if (arming) {
+			if (flushing) {
+				// armed from inside a running flush -> a continuation of an update
+				// chain. Count the hops; bail if it never settles.
+				if (++chainDepth > MAX_UPDATE_DEPTH) {
+					chainDepth = 0; // reset so the system is usable after we throw
+					throw new Error(
+						`vanilla: maximum update depth exceeded (${MAX_UPDATE_DEPTH}) — ` +
+							`likely a feedback loop where an effect's set() retriggers ` +
+							`itself (a writes b, b writes a, …). Check your reactTo/computed ` +
+							`wiring, or make the loop converge so the equality guard can ` +
+							`stop it.`,
+					);
+				}
+			} else {
+				chainDepth = 0; // a fresh, user-initiated burst resets the chain
+			}
+		}
 		q.map.set(fn, read); // Map dedupes by fn identity: scheduled twice -> runs once
-		if (!q.scheduled) {
+		if (arming) {
 			q.scheduled = true;
 			q.arm(() => flush(kind));
 		}
@@ -119,6 +172,31 @@ const Scheduler = (() => {
 
 	return { enqueue };
 })();
+
+/* ============================================================================
+ * Compute guard — keeps `computed`'s calc pure.
+ *
+ * A `computed`'s `calc` is contractually a *pure derivation* of its sources: it
+ * reads and returns, it must not write. Writing an observable from inside calc
+ * is the impure-computed footgun other libraries forbid (MobX throws on it) — it
+ * turns a "derivation" into a hidden effect and is a prime source of update
+ * loops. We forbid it the same way: while a calc runs, `observable.set()` throws.
+ * The internal write that stores the derived result happens *after* calc returns
+ * (outside the guard — see `computed`), so it is unaffected. Effects that write
+ * state stay fine; that is what `reactTo` is for. Only `calc` is fenced.
+ * ========================================================================== */
+
+let computing = 0; // >0 while a computed's calc is on the stack
+
+/** Run `calc` with `observable.set()` fenced off; returns its value. */
+function withinCompute<T>(calc: () => T): T {
+	computing++;
+	try {
+		return calc();
+	} finally {
+		computing--;
+	}
+}
 
 /* ============================================================================
  * observable — explicit subscribe, BATCHED on flush.
@@ -146,6 +224,13 @@ export function observable<T>(value: T): Observable<T> {
 	const self: Observable<T> = {
 		get: () => value,
 		set(v) {
+			if (computing > 0) {
+				throw new Error(
+					"vanilla: cannot set() an observable from inside a computed's " +
+						"calc — calc must be a pure derivation of its sources (no writes " +
+						"/ side effects). Move the write into a reactTo(...) effect.",
+				);
+			}
 			if (v === value) return; // equality guard
 			value = v;
 			notify();
@@ -192,6 +277,10 @@ export function reactTo(
  * Recomputes (batched) when any source changes; caches the result; fans out to
  * ITS OWN subscribers only when the result actually changes (riding the
  * equality guard). This is `reactTo` + an internal observable holding the value.
+ *
+ * `calc` must be PURE — it derives a value from its sources and returns it.
+ * Writing an observable from inside `calc` throws (see the compute guard); put
+ * side effects in a `reactTo` effect instead.
  * ========================================================================== */
 
 /** Derive a read-only observable from other observables. */
@@ -200,9 +289,10 @@ export function computed<T>(
 	calc: () => T,
 	{ scheduler = "microtask" }: { scheduler?: SchedulerKind } = {},
 ): ReadonlyObservable<T> {
-	const out = observable<T>(calc()); // holds the derived value
-	// recompute on any source change; out.set() guards equality + fans out
-	reactTo(sources, () => out.set(calc()), { immediate: false, scheduler });
+	const out = observable<T>(withinCompute(calc)); // holds the derived value
+	// Recompute on any source change; out.set() guards equality + fans out.
+	// calc runs fenced (no writes allowed); the resulting out.set() runs unfenced.
+	reactTo(sources, () => out.set(withinCompute(calc)), { immediate: false, scheduler });
 	return {
 		get: out.get,
 		subscribe: out.subscribe,
