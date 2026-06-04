@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>@marianmeres/vanilla — examples</title>
+		<script src="https://cdn.tailwindcss.com"></script>
+	</head>
+	<body class="bg-slate-50 min-h-screen">
+		<div class="max-w-md mx-auto p-6">
+			<h1 class="text-2xl font-bold text-slate-800 mb-1">
+				<a href="https://github.com/marianmeres/vanilla"
+					>@marianmeres/vanilla</a
+				>
+			</h1>
+
+			<ul class="space-y-3">
+				<li>
+					<a
+						href="./fetch.html"
+						class="text-blue-600 font-medium hover:underline"
+						>Fetch</a
+					>
+					<p class="text-xs text-slate-500">
+						Async request flow — observable state, computed loading
+						flag, per-state <code>&lt;template&gt;</code> (idle /
+						loading / error / result), and request cancellation via
+						<code>AbortController</code>.
+					</p>
+				</li>
+				<li>
+					<a
+						href="./todo.html"
+						class="text-blue-600 font-medium hover:underline"
+						>Todo</a
+					>
+					<p class="text-xs text-slate-500">
+						Classic list app — microtask-batched updates,
+						<code>reactTo</code>, computed values, and a global
+						light/dark theme toggle.
+					</p>
+				</li>
+				<li>
+					<a
+						href="./todo-ssr.html"
+						class="text-blue-600 font-medium hover:underline"
+						>Todo (SSR)</a
+					>
+					<p class="text-xs text-slate-500">
+						Progressive enhancement — server-rendered markup brought
+						to life in place with <code>enhance</code>, no
+						client-side rebuild of the list.
+					</p>
+				</li>
+				<li>
+					<a
+						href="./multi-component/index.html"
+						class="text-blue-600 font-medium hover:underline"
+						>Multi-component</a
+					>
+					<p class="text-xs text-slate-500">
+						Single-file components loaded with
+						<code>loadComponent()</code> — props, scoped
+						markup/script/style per file, wired up through an import
+						map. Requires
+						<code>deno task example:build</code> first.
+					</p>
+				</li>
+				<li>
+					<a
+						href="./quake-watch.html"
+						class="text-blue-600 font-medium hover:underline"
+						>Quake Watch</a
+					>
+					<p class="text-xs text-slate-500">
+						Live USGS earthquake feed — fetch, client-side magnitude
+						filtering, and severity colors driven entirely by
+						<code>@marianmeres/design-tokens</code>, with swappable
+						themes and persisted light/dark preference.
+					</p>
+				</li>
+			</ul>
+		</div>
+	</body>
+</html>
