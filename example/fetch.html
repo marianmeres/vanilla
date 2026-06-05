@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,11 +7,11 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Fetch</h1>
-			<p class="text-xs text-slate-400 mb-4">
-				@marianmeres/vanilla · observable state · computed loading flag ·
-				per-state templates · AbortController
+			<p class="text-slate-400 mb-4">
+				@marianmeres/vanilla · observable state · computed loading flag
+				· per-state templates · AbortController
 			</p>
 
 			<!--
@@ -45,8 +45,7 @@
 						data-ref="result"
 						aria-live="polite"
 						class="min-h-[6rem] border rounded p-3 bg-white"
-					>
-					</div>
+					></div>
 				</div>
 			</template>
 
@@ -70,19 +69,20 @@
 
 			<template id="tpl-error">
 				<div class="text-sm">
-					<p class="font-semibold text-red-600 mb-1">Request failed</p>
+					<p class="font-semibold text-red-600 mb-1">
+						Request failed
+					</p>
 					<p
 						data-bind="text:message"
-						class="text-red-500 font-mono text-xs break-words"
-					>
-					</p>
+						class="text-red-500 font-mono break-words"
+					></p>
 				</div>
 			</template>
 
 			<template id="tpl-result">
 				<pre
 					data-bind="text:body"
-					class="text-xs text-slate-700 whitespace-pre-wrap break-words"
+					class="text-slate-700 whitespace-pre-wrap break-words"
 				></pre>
 			</template>
 
@@ -112,7 +112,11 @@
 			 * guard always fans out. Status is an explicit enum, not booleans, so
 			 * "loading" and "error" can never both be true.
 			 * ---------------------------------------------------------------- */
-			const request = observable({ status: "idle", data: null, error: null });
+			const request = observable({
+				status: "idle",
+				data: null,
+				error: null,
+			});
 
 			// DERIVED: a loading flag for disabling controls. Subscribers fire only
 			// when the boolean actually flips, not on every request.set().
@@ -169,13 +173,14 @@
 				track(
 					delegate(el, {
 						load: (_e, t) => {
-							const url = t.dataset.arg === "bad"
-								// a route that 404s -> exercises the error path
-								? "https://jsonplaceholder.typicode.com/no-such-endpoint-xyz"
-								// a real resource -> exercises the success path
-								: `https://jsonplaceholder.typicode.com/posts/${
-									1 + Math.floor(Math.random() * 100)
-								}`;
+							const url =
+								t.dataset.arg === "bad"
+									? // a route that 404s -> exercises the error path
+										"https://jsonplaceholder.typicode.com/no-such-endpoint-xyz"
+									: // a real resource -> exercises the success path
+										`https://jsonplaceholder.typicode.com/posts/${
+											1 + Math.floor(Math.random() * 100)
+										}`;
 							doFetch(url);
 						},
 					}),

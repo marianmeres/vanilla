@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,7 +7,7 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen" data-theme="light">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<div class="flex items-center justify-between mb-1">
 				<h1 class="text-2xl font-bold text-slate-800">Todo</h1>
 				<button
@@ -76,8 +76,7 @@
 					<p
 						data-ref="stats"
 						class="mt-3 text-[11px] text-slate-400"
-					>
-					</p>
+					></p>
 				</div>
 			</template>
 
@@ -191,7 +190,7 @@
 				{ immediate = true, scheduler = "microtask" } = {},
 			) {
 				const unsubs = sources.map((o) =>
-					o.subscribe(fn, { immediate: false, scheduler })
+					o.subscribe(fn, { immediate: false, scheduler }),
 				);
 				if (immediate) fn();
 				return () => unsubs.forEach((u) => u());
@@ -269,7 +268,7 @@
 				root.querySelectorAll("[data-on]").forEach((el) =>
 					el.dataset.on
 						.split(";")
-						.forEach((r) => seen.add(r.split(":")[0].trim()))
+						.forEach((r) => seen.add(r.split(":")[0].trim())),
 				);
 				const unsubs = [];
 				seen.forEach((evt) => {
@@ -327,7 +326,9 @@
 					},
 					toggle(id) {
 						todos.update((l) =>
-							l.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+							l.map((t) =>
+								t.id === id ? { ...t, done: !t.done } : t,
+							),
 						);
 					},
 					remove(id) {
@@ -341,7 +342,11 @@
 						return todos
 							.get()
 							.filter((t) =>
-								f === "all" ? true : f === "active" ? !t.done : t.done
+								f === "all"
+									? true
+									: f === "active"
+										? !t.done
+										: t.done,
 							);
 					},
 				};
@@ -353,13 +358,13 @@
 			function themeTokens(t) {
 				return t === "dark"
 					? {
-						row: "bg-slate-800 border-slate-700 text-slate-100",
-						page: "dark",
-					}
+							row: "bg-slate-800 border-slate-700 text-slate-100",
+							page: "dark",
+						}
 					: {
-						row: "bg-white border-slate-200 text-slate-800",
-						page: "light",
-					};
+							row: "bg-white border-slate-200 text-slate-800",
+							page: "light",
+						};
 			}
 
 			/* ================================================================
@@ -409,7 +414,8 @@
 							rowClass:
 								"flex items-center gap-2 border rounded px-3 py-2 " +
 								tok.row,
-							textClass: "flex-1 text-sm " +
+							textClass:
+								"flex-1 text-sm " +
 								(t.done ? "line-through opacity-50" : ""),
 						});
 						r.list.appendChild(li);
@@ -430,8 +436,11 @@
 					store.filter.subscribe((f) => {
 						el.querySelectorAll(".filter-btn").forEach((b) => {
 							const active = b.dataset.arg === f;
-							b.className = "filter-btn px-2 py-1 rounded " +
-								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+							b.className =
+								"filter-btn px-2 py-1 rounded " +
+								(active
+									? "bg-slate-800 text-white"
+									: "bg-slate-200");
 						});
 					}),
 				);

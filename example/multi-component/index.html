@@ -1,10 +1,11 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>
-			@marianmeres/vanilla — multi-component (single-file components · props)
+			@marianmeres/vanilla — multi-component (single-file components ·
+			props)
 		</title>
 		<script src="https://cdn.tailwindcss.com"></script>
 
@@ -19,27 +20,27 @@
 			example:build` first to produce it).
 		-->
 		<script type="importmap">
-		{
-			"imports": {
-				"@marianmeres/vanilla": "../dist/bundle.js"
+			{
+				"imports": {
+					"@marianmeres/vanilla": "../dist/bundle.js"
+				}
 			}
-		}
 		</script>
 	</head>
 	<body class="bg-slate-50 min-h-screen" data-theme="light">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<div class="flex items-center justify-between mb-1">
 				<h1 class="text-2xl font-bold text-slate-800">Todo</h1>
 				<button
 					id="theme-toggle"
-					class="text-xs px-2 py-1 rounded bg-slate-200"
+					class="px-2 py-1 rounded bg-slate-200"
 				>
 					toggle theme
 				</button>
 			</div>
-			<p class="text-xs text-slate-400 mb-4">
-				@marianmeres/vanilla · split into single-file components · props down,
-				callbacks up
+			<p class="text-slate-400 mb-4">
+				@marianmeres/vanilla · split into single-file components · props
+				down, callbacks up
 			</p>
 
 			<!--
@@ -103,9 +104,12 @@
 				},
 				toggle: (id) =>
 					todos.update((l) =>
-						l.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+						l.map((t) =>
+							t.id === id ? { ...t, done: !t.done } : t,
+						),
 					),
-				remove: (id) => todos.update((l) => l.filter((t) => t.id !== id)),
+				remove: (id) =>
+					todos.update((l) => l.filter((t) => t.id !== id)),
 				setFilter: (f) => filter.set(f),
 			};
 

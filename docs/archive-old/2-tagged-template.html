@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,7 +7,7 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
 			<p class="text-xs text-slate-400 mb-4">
 				Approach 2: tagged-template <code>html``</code> + innerHTML swap
@@ -75,7 +75,11 @@
 
 			function visible(s) {
 				return s.todos.filter((t) =>
-					s.filter === "all" ? true : s.filter === "active" ? !t.done : t.done
+					s.filter === "all"
+						? true
+						: s.filter === "active"
+							? !t.done
+							: t.done,
 				);
 			}
 
@@ -87,74 +91,74 @@
 					],
 					filter: "all",
 				},
-				(s) =>
-					html`
-						<div class="flex gap-2 mb-3">
-							<input
-								id="new"
-								class="flex-1 border rounded px-3 py-2 text-sm"
-								placeholder="What needs doing?"
-							/>
-							<button
-								onclick="addTodo()"
-								class="bg-blue-600 text-white px-4 rounded text-sm"
-							>
-								Add
-							</button>
-						</div>
-						<div class="flex gap-2 mb-3 text-xs">
-							${["all", "active", "done"].map(
-								(f) =>
-									html`
-										<button
-											onclick="setState({filter:'${raw(f)}'})"
-											class="px-2 py-1 rounded ${raw(
-												s.filter === f
-													? "bg-slate-800 text-white"
-													: "bg-slate-200",
-											)}"
-										>
-											${f}
-										</button>
-									`,
-							)}
-							<span class="ml-auto text-slate-400 self-center">${s.todos
-								.filter((t) => !t.done).length} left</span>
-						</div>
-						<ul class="space-y-1">
-							${visible(s).map(
-								(t) =>
-									html`
-										<li
-											class="flex items-center gap-2 bg-white border rounded px-3 py-2"
-										>
-											<input
-												type="checkbox"
-												${raw(t.done ? "checked" : "")}
-												onchange="toggle(${t.id})"
-											/>
-											<span
-												class="flex-1 text-sm ${raw(
-													t.done
-														? "line-through text-slate-400"
-														: "",
-												)}"
-											>${t.text}</span>
-											<button
-												onclick="remove(${t.id})"
-												class="text-red-400 text-xs"
-											>
-												✕
-											</button>
-										</li>
-									`,
-							)} ${visible(s).length === 0
-								? raw(
+				(s) => html`
+					<div class="flex gap-2 mb-3">
+						<input
+							id="new"
+							class="flex-1 border rounded px-3 py-2 text-sm"
+							placeholder="What needs doing?"
+						/>
+						<button
+							onclick="addTodo()"
+							class="bg-blue-600 text-white px-4 rounded text-sm"
+						>
+							Add
+						</button>
+					</div>
+					<div class="flex gap-2 mb-3 text-xs">
+						${["all", "active", "done"].map(
+							(f) => html`
+								<button
+									onclick="setState({filter:'${raw(f)}'})"
+									class="px-2 py-1 rounded ${raw(
+										s.filter === f
+											? "bg-slate-800 text-white"
+											: "bg-slate-200",
+									)}"
+								>
+									${f}
+								</button>
+							`,
+						)}
+						<span class="ml-auto text-slate-400 self-center"
+							>${s.todos.filter((t) => !t.done).length} left</span
+						>
+					</div>
+					<ul class="space-y-1">
+						${visible(s).map(
+							(t) => html`
+								<li
+									class="flex items-center gap-2 bg-white border rounded px-3 py-2"
+								>
+									<input
+										type="checkbox"
+										${raw(t.done ? "checked" : "")}
+										onchange="toggle(${t.id})"
+									/>
+									<span
+										class="flex-1 text-sm ${raw(
+											t.done
+												? "line-through text-slate-400"
+												: "",
+										)}"
+										>${t.text}</span
+									>
+									<button
+										onclick="remove(${t.id})"
+										class="text-red-400 text-xs"
+									>
+										✕
+									</button>
+								</li>
+							`,
+						)}
+						${visible(s).length === 0
+							? raw(
 									'<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>',
 								)
-								: ""}
-						</ul>
-					`,
+							: ""}
+					</ul>
+				`,
 			);
 
 			/* Inline handlers reference globals (the trade-off of string render). */
@@ -168,7 +172,9 @@
 			}
 			function toggle(id) {
 				setState((s) => ({
-					todos: s.todos.map((t) => t.id === id ? { ...t, done: !t.done } : t),
+					todos: s.todos.map((t) =>
+						t.id === id ? { ...t, done: !t.done } : t,
+					),
 				}));
 			}
 			function remove(id) {

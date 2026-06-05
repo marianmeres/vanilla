@@ -1,25 +1,27 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-		<title>@marianmeres/vanilla — Todo (batched · reactTo · computed)</title>
+		<title>
+			@marianmeres/vanilla — Todo (batched · reactTo · computed)
+		</title>
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen" data-theme="light">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<div class="flex items-center justify-between mb-1">
 				<h1 class="text-2xl font-bold text-slate-800">Todo</h1>
 				<button
 					id="theme-toggle"
-					class="text-xs px-2 py-1 rounded bg-slate-200"
+					class="px-2 py-1 rounded bg-slate-200"
 				>
 					toggle theme
 				</button>
 			</div>
-			<p class="text-xs text-slate-400 mb-4">
-				@marianmeres/vanilla · batched (microtask) · reactTo · computed · global
-				theme
+			<p class="text-slate-400 mb-4">
+				@marianmeres/vanilla · batched (microtask) · reactTo · computed
+				· global theme
 			</p>
 
 			<template id="tpl-app">
@@ -38,7 +40,7 @@
 						</button>
 					</div>
 
-					<div class="flex gap-2 mb-3 text-xs">
+					<div class="flex gap-2 mb-3">
 						<button
 							data-on="click:filter"
 							data-arg="all"
@@ -74,7 +76,10 @@
 						Nothing here
 					</p>
 
-					<p data-ref="stats" class="mt-3 text-[11px] text-slate-400"></p>
+					<p
+						data-ref="stats"
+						class="mt-3 text-[11px] text-slate-400"
+					></p>
 				</div>
 			</template>
 
@@ -92,7 +97,7 @@
 						data-bind="text:text;class:textClass"
 						class="flex-1 text-sm"
 					></span>
-					<button data-on="click:remove" class="text-red-400 text-xs">
+					<button data-on="click:remove" class="text-red-400">
 						✕
 					</button>
 				</li>
@@ -150,7 +155,9 @@
 					},
 					toggle(id) {
 						todos.update((l) =>
-							l.map((t) => (t.id === id ? { ...t, done: !t.done } : t))
+							l.map((t) =>
+								t.id === id ? { ...t, done: !t.done } : t,
+							),
 						);
 					},
 					remove(id) {
@@ -164,7 +171,11 @@
 						return todos
 							.get()
 							.filter((t) =>
-								f === "all" ? true : f === "active" ? !t.done : t.done
+								f === "all"
+									? true
+									: f === "active"
+										? !t.done
+										: t.done,
 							);
 					},
 				};
@@ -174,13 +185,13 @@
 			function themeTokens(t) {
 				return t === "dark"
 					? {
-						row: "bg-slate-800 border-slate-700 text-slate-100",
-						page: "dark",
-					}
+							row: "bg-slate-800 border-slate-700 text-slate-100",
+							page: "dark",
+						}
 					: {
-						row: "bg-white border-slate-200 text-slate-800",
-						page: "light",
-					};
+							row: "bg-white border-slate-200 text-slate-800",
+							page: "light",
+						};
 			}
 
 			/* THE VIEW */
@@ -229,7 +240,8 @@
 							rowClass:
 								"flex items-center gap-2 border rounded px-3 py-2 " +
 								tok.row,
-							textClass: "flex-1 text-sm " +
+							textClass:
+								"flex-1 text-sm " +
 								(t.done ? "line-through opacity-50" : ""),
 						});
 						r.list.appendChild(li);
@@ -250,8 +262,11 @@
 					store.filter.subscribe((f) => {
 						el.querySelectorAll(".filter-btn").forEach((b) => {
 							const active = b.dataset.arg === f;
-							b.className = "filter-btn px-2 py-1 rounded " +
-								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+							b.className =
+								"filter-btn px-2 py-1 rounded " +
+								(active
+									? "bg-slate-800 text-white"
+									: "bg-slate-200");
 						});
 					}),
 				);

@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,7 +7,7 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
 			<p class="text-xs text-slate-400 mb-4">
 				Approach 4: <code>Proxy</code> reactive store +
@@ -29,9 +29,9 @@
 			function track(target, key) {
 				if (!active) return;
 				let keys = depMap.get(target);
-				if (!keys) depMap.set(target, keys = new Map());
+				if (!keys) depMap.set(target, (keys = new Map()));
 				let deps = keys.get(key);
-				if (!deps) keys.set(key, deps = new Set());
+				if (!deps) keys.set(key, (deps = new Set()));
 				deps.add(active);
 			}
 
@@ -103,7 +103,7 @@
 			function visible() {
 				const f = state.filter;
 				return state.todos.filter((t) =>
-					f === "all" ? true : f === "active" ? !t.done : t.done
+					f === "all" ? true : f === "active" ? !t.done : t.done,
 				);
 			}
 
@@ -137,8 +137,11 @@
 				};
 				$filters.appendChild(btn);
 				bind(() => {
-					btn.className = "px-2 py-1 rounded " +
-						(state.filter === f ? "bg-slate-800 text-white" : "bg-slate-200");
+					btn.className =
+						"px-2 py-1 rounded " +
+						(state.filter === f
+							? "bg-slate-800 text-white"
+							: "bg-slate-200");
 				});
 			});
 			// "N left" counter — re-runs only when todos change.
@@ -146,7 +149,8 @@
 			counter.className = "ml-auto text-slate-400 self-center";
 			$filters.appendChild(counter);
 			bind(() => {
-				counter.textContent = state.todos.filter((t) => !t.done).length + " left";
+				counter.textContent =
+					state.todos.filter((t) => !t.done).length + " left";
 			});
 
 			// List: container-level effect; rebuilds <ul> children on any change.
@@ -169,7 +173,8 @@
 						t.done = !t.done;
 					}; // direct mutation
 					const span = document.createElement("span");
-					span.className = "flex-1 text-sm " +
+					span.className =
+						"flex-1 text-sm " +
 						(t.done ? "line-through text-slate-400" : "");
 					span.textContent = t.text;
 					const del = document.createElement("button");

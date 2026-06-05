@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -22,19 +22,19 @@
 		</style>
 	</head>
 	<body class="bg-slate-50 min-h-screen" data-theme="light">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<div class="flex items-center justify-between mb-1">
 				<h1 class="text-2xl font-bold text-slate-800">Todo (SSR)</h1>
 				<button
 					id="theme-toggle"
-					class="text-xs px-2 py-1 rounded bg-slate-200"
+					class="px-2 py-1 rounded bg-slate-200"
 				>
 					toggle theme
 				</button>
 			</div>
-			<p class="text-xs text-slate-400 mb-4">
-				@marianmeres/vanilla · <strong>enhance</strong> · the markup below is
-				server-rendered and brought to life in place — no full
+			<p class="text-slate-400 mb-4">
+				@marianmeres/vanilla · <strong>enhance</strong> · the markup
+				below is server-rendered and brought to life in place — no full
 				<code>&lt;template&gt;</code>, no client rebuild of the list.
 			</p>
 
@@ -64,17 +64,32 @@
 					</button>
 				</div>
 
-				<div class="flex gap-2 mb-3 text-xs">
-					<button data-on="click:filter" data-arg="all" class="filter-btn px-2 py-1 rounded bg-slate-200">
+				<div class="flex gap-2 mb-3">
+					<button
+						data-on="click:filter"
+						data-arg="all"
+						class="filter-btn px-2 py-1 rounded bg-slate-200"
+					>
 						all
 					</button>
-					<button data-on="click:filter" data-arg="active" class="filter-btn px-2 py-1 rounded bg-slate-200">
+					<button
+						data-on="click:filter"
+						data-arg="active"
+						class="filter-btn px-2 py-1 rounded bg-slate-200"
+					>
 						active
 					</button>
-					<button data-on="click:filter" data-arg="done" class="filter-btn px-2 py-1 rounded bg-slate-200">
+					<button
+						data-on="click:filter"
+						data-arg="done"
+						class="filter-btn px-2 py-1 rounded bg-slate-200"
+					>
 						done
 					</button>
-					<span data-ref="count" class="ml-auto self-center text-slate-400"></span>
+					<span
+						data-ref="count"
+						class="ml-auto self-center text-slate-400"
+					></span>
 				</div>
 
 				<ul data-ref="list" class="space-y-1">
@@ -83,9 +98,17 @@
 						data-id="1"
 						class="todo-row flex items-center gap-2 border rounded px-3 py-2 bg-white border-slate-200 text-slate-800"
 					>
-						<input type="checkbox" data-on="change:toggle" checked />
-						<span class="flex-1 text-sm line-through opacity-50">Batch on microtask</span>
-						<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+						<input
+							type="checkbox"
+							data-on="change:toggle"
+							checked
+						/>
+						<span class="flex-1 text-sm line-through opacity-50"
+							>Batch on microtask</span
+						>
+						<button data-on="click:remove" class="text-red-400">
+							✕
+						</button>
 					</li>
 					<!-- Server-rendered row #2 (active) -->
 					<li
@@ -94,7 +117,9 @@
 					>
 						<input type="checkbox" data-on="change:toggle" />
 						<span class="flex-1 text-sm">Derive with computed</span>
-						<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+						<button data-on="click:remove" class="text-red-400">
+							✕
+						</button>
 					</li>
 				</ul>
 
@@ -114,10 +139,20 @@
 			on the page stays as the server rendered it.
 		-->
 		<template id="tpl-item">
-			<li class="todo-row flex items-center gap-2 border rounded px-3 py-2" data-bind="class:rowClass">
-				<input type="checkbox" data-on="change:toggle" data-bind="checked:done" />
-				<span data-bind="text:text;class:textClass" class="flex-1 text-sm"></span>
-				<button data-on="click:remove" class="text-red-400 text-xs">✕</button>
+			<li
+				class="todo-row flex items-center gap-2 border rounded px-3 py-2"
+				data-bind="class:rowClass"
+			>
+				<input
+					type="checkbox"
+					data-on="change:toggle"
+					data-bind="checked:done"
+				/>
+				<span
+					data-bind="text:text;class:textClass"
+					class="flex-1 text-sm"
+				></span>
+				<button data-on="click:remove" class="text-red-400">✕</button>
 			</li>
 		</template>
 
@@ -186,8 +221,9 @@
 				// an observable so the count text updates reactively.
 				function recount() {
 					remaining.set(
-						r.list.querySelectorAll("input[type=checkbox]:not(:checked)")
-							.length,
+						r.list.querySelectorAll(
+							"input[type=checkbox]:not(:checked)",
+						).length,
 					);
 				}
 
@@ -196,11 +232,12 @@
 					const f = filter.get();
 					let visible = 0;
 					r.list.querySelectorAll("li[data-id]").forEach((li) => {
-						const show = f === "all"
-							? true
-							: f === "active"
-							? !isDone(li)
-							: isDone(li);
+						const show =
+							f === "all"
+								? true
+								: f === "active"
+									? !isDone(li)
+									: isDone(li);
 						li.classList.toggle("hidden", !show);
 						if (show) visible++;
 					});
@@ -268,8 +305,11 @@
 						applyFilter();
 						el.querySelectorAll(".filter-btn").forEach((b) => {
 							const active = b.dataset.arg === filter.get();
-							b.className = "filter-btn px-2 py-1 rounded " +
-								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+							b.className =
+								"filter-btn px-2 py-1 rounded " +
+								(active
+									? "bg-slate-800 text-white"
+									: "bg-slate-200");
 						});
 					}),
 				);

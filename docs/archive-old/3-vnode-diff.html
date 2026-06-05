@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,10 +7,11 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
 			<p class="text-xs text-slate-400 mb-4">
-				Approach 3: <code>h()</code> vnodes + naive keyed diff (preserves focus)
+				Approach 3: <code>h()</code> vnodes + naive keyed diff
+				(preserves focus)
 			</p>
 			<div id="app"></div>
 		</div>
@@ -183,8 +184,8 @@
 					state.filter === "all"
 						? true
 						: state.filter === "active"
-						? !t.done
-						: t.done
+							? !t.done
+							: t.done,
 				);
 			}
 
@@ -222,14 +223,15 @@
 							h(
 								"button",
 								{
-									class: "px-2 py-1 rounded " +
+									class:
+										"px-2 py-1 rounded " +
 										(state.filter === f
 											? "bg-slate-800 text-white"
 											: "bg-slate-200"),
 									onclick: () => setState({ filter: f }),
 								},
 								f,
-							)
+							),
 						),
 						h(
 							"span",
@@ -242,47 +244,47 @@
 						{ class: "space-y-1" },
 						...(visible().length
 							? visible().map((t) =>
-								h(
-									"li",
-									{
-										key: t.id,
-										class:
-											"flex items-center gap-2 bg-white border rounded px-3 py-2",
-									},
-									h("input", {
-										type: "checkbox",
-										checked: t.done,
-										onchange: () => toggle(t.id),
-									}),
 									h(
-										"span",
+										"li",
 										{
-											class: "flex-1 text-sm " +
-												(t.done
-													? "line-through text-slate-400"
-													: ""),
+											key: t.id,
+											class: "flex items-center gap-2 bg-white border rounded px-3 py-2",
 										},
-										t.text,
-									),
-									h(
-										"button",
-										{
-											class: "text-red-400 text-xs",
-											onclick: () => remove(t.id),
-										},
-										"✕",
+										h("input", {
+											type: "checkbox",
+											checked: t.done,
+											onchange: () => toggle(t.id),
+										}),
+										h(
+											"span",
+											{
+												class:
+													"flex-1 text-sm " +
+													(t.done
+														? "line-through text-slate-400"
+														: ""),
+											},
+											t.text,
+										),
+										h(
+											"button",
+											{
+												class: "text-red-400 text-xs",
+												onclick: () => remove(t.id),
+											},
+											"✕",
+										),
 									),
 								)
-							)
 							: [
-								h(
-									"li",
-									{
-										class: "text-slate-400 text-sm text-center py-4",
-									},
-									"Nothing here",
-								),
-							]),
+									h(
+										"li",
+										{
+											class: "text-slate-400 text-sm text-center py-4",
+										},
+										"Nothing here",
+									),
+								]),
 					),
 				);
 			}
@@ -307,7 +309,9 @@
 			}
 			function toggle(id) {
 				setState((s) => ({
-					todos: s.todos.map((t) => t.id === id ? { ...t, done: !t.done } : t),
+					todos: s.todos.map((t) =>
+						t.id === id ? { ...t, done: !t.done } : t,
+					),
 				}));
 			}
 			function remove(id) {

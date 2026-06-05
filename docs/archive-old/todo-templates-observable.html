@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,10 +7,11 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
 			<p class="text-xs text-slate-400 mb-4">
-				HTML templates · data-* bindings · explicit subscribe · delegated events
+				HTML templates · data-* bindings · explicit subscribe ·
+				delegated events
 			</p>
 
 			<!-- ============================================================
@@ -185,7 +186,7 @@
 				root.querySelectorAll("[data-on]").forEach((el) =>
 					el.dataset.on
 						.split(";")
-						.forEach((r) => seen.add(r.split(":")[0].trim()))
+						.forEach((r) => seen.add(r.split(":")[0].trim())),
 				);
 				const unsubs = [];
 				seen.forEach((evt) => {
@@ -230,7 +231,9 @@
 					},
 					toggle(id) {
 						todos.update((l) =>
-							l.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+							l.map((t) =>
+								t.id === id ? { ...t, done: !t.done } : t,
+							),
 						);
 					},
 					remove(id) {
@@ -244,7 +247,11 @@
 						return todos
 							.get()
 							.filter((t) =>
-								f === "all" ? true : f === "active" ? !t.done : t.done
+								f === "all"
+									? true
+									: f === "active"
+										? !t.done
+										: t.done,
 							);
 					},
 					remaining() {
@@ -303,7 +310,8 @@
 						applyBindings(li, {
 							done: t.done,
 							text: t.text,
-							textClass: "flex-1 text-sm " +
+							textClass:
+								"flex-1 text-sm " +
 								(t.done ? "line-through text-slate-400" : ""),
 						});
 						r.list.appendChild(li);
@@ -323,8 +331,11 @@
 					store.filter.subscribe((f) => {
 						el.querySelectorAll(".filter-btn").forEach((b) => {
 							const active = b.dataset.arg === f;
-							b.className = "filter-btn px-2 py-1 rounded " +
-								(active ? "bg-slate-800 text-white" : "bg-slate-200");
+							b.className =
+								"filter-btn px-2 py-1 rounded " +
+								(active
+									? "bg-slate-800 text-white"
+									: "bg-slate-200");
 						});
 					}),
 				);

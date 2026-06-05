@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
@@ -7,11 +7,11 @@
 		<script src="https://cdn.tailwindcss.com"></script>
 	</head>
 	<body class="bg-slate-50 min-h-screen">
-		<div class="max-w-md mx-auto p-6">
+		<div class="max-w-2xl mx-auto p-6">
 			<h1 class="text-2xl font-bold text-slate-800 mb-1">Todo</h1>
 			<p class="text-xs text-slate-400 mb-4">
-				Approach 5: custom elements + shared signals (light DOM, so Tailwind
-				works)
+				Approach 5: custom elements + shared signals (light DOM, so
+				Tailwind works)
 			</p>
 			<todo-app></todo-app>
 		</div>
@@ -68,7 +68,9 @@
 				},
 				toggle(id) {
 					this.todos.update((l) =>
-						l.map((t) => t.id === id ? { ...t, done: !t.done } : t)
+						l.map((t) =>
+							t.id === id ? { ...t, done: !t.done } : t,
+						),
 					);
 				},
 				remove(id) {
@@ -123,23 +125,20 @@
 						.filter((t) => !t.done).length;
 					this.innerHTML = `
       <div class="flex gap-2 mb-3 text-xs">
-        ${
-						["all", "active", "done"]
-							.map(
-								(f) => `
+        ${["all", "active", "done"]
+			.map(
+				(f) => `
           <button data-f="${f}" class="px-2 py-1 rounded ${
-									active === f
-										? "bg-slate-800 text-white"
-										: "bg-slate-200"
-								}">${f}</button>
+				active === f ? "bg-slate-800 text-white" : "bg-slate-200"
+			}">${f}</button>
         `,
-							)
-							.join("")
-					}
+			)
+			.join("")}
         <span class="ml-auto text-slate-400 self-center">${left} left</span>
       </div>`;
 					this.querySelectorAll("button").forEach(
-						(b) => (b.onclick = () => store.filter.set(b.dataset.f)),
+						(b) =>
+							(b.onclick = () => store.filter.set(b.dataset.f)),
 					);
 				}
 			}
@@ -153,35 +152,41 @@
 					const list = store.todos
 						.get()
 						.filter((t) =>
-							f === "all" ? true : f === "active" ? !t.done : t.done
+							f === "all"
+								? true
+								: f === "active"
+									? !t.done
+									: t.done,
 						);
 					this.innerHTML = `
       <ul class="space-y-1">
-        ${
-						list
-							.map(
-								(t) => `
+        ${list
+			.map(
+				(t) => `
           <li class="flex items-center gap-2 bg-white border rounded px-3 py-2">
             <input type="checkbox" data-toggle="${t.id}" ${t.done ? "checked" : ""} />
             <span class="flex-1 text-sm ${
-									t.done ? "line-through text-slate-400" : ""
-								}">${t.text}</span>
+				t.done ? "line-through text-slate-400" : ""
+			}">${t.text}</span>
             <button data-remove="${t.id}" class="text-red-400 text-xs">✕</button>
           </li>`,
-							)
-							.join("")
-					}
+			)
+			.join("")}
         ${
-						list.length === 0
-							? '<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>'
-							: ""
-					}
+			list.length === 0
+				? '<li class="text-slate-400 text-sm text-center py-4">Nothing here</li>'
+				: ""
+		}
       </ul>`;
 					this.querySelectorAll("[data-toggle]").forEach(
-						(el) => (el.onchange = () => store.toggle(+el.dataset.toggle)),
+						(el) =>
+							(el.onchange = () =>
+								store.toggle(+el.dataset.toggle)),
 					);
 					this.querySelectorAll("[data-remove]").forEach(
-						(el) => (el.onclick = () => store.remove(+el.dataset.remove)),
+						(el) =>
+							(el.onclick = () =>
+								store.remove(+el.dataset.remove)),
 					);
 				}
 			}
@@ -191,8 +196,7 @@
 			 * ------------------------------------------------------------------ */
 			class TodoApp extends HTMLElement {
 				connectedCallback() {
-					this.innerHTML =
-						`<todo-input></todo-input><todo-filters></todo-filters><todo-list></todo-list>`;
+					this.innerHTML = `<todo-input></todo-input><todo-filters></todo-filters><todo-list></todo-list>`;
 				}
 			}
 
