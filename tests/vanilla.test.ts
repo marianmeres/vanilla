@@ -1,5 +1,11 @@
 import { assert, assertEquals, assertStringIncludes, assertThrows } from "@std/assert";
-import { computed, MAX_UPDATE_DEPTH, observable, reactTo } from "../src/vanilla.ts";
+import {
+	computed,
+	MAX_UPDATE_DEPTH,
+	observable,
+	reactTo,
+	resolveAssetUrl,
+} from "../src/vanilla.ts";
 
 /**
  * Drain the scheduler. A macrotask boundary lets the entire microtask chain
@@ -219,4 +225,55 @@ Deno.test("scheduler: wide fan-out within one flush is not mistaken for a loop",
 	assertEquals(cap.errors, []);
 	assertEquals(sinks[0].get(), 1);
 	assertEquals(sinks[n - 1].get(), n); // 1 + (n - 1)
+});
+
+/* ----------------------------------------------------------------------------
+ * resolveAssetUrl: the credential-stripping URL resolver behind loadComponent /
+ * loadTemplates. `base` is passed explicitly so these stay pure (no DOM): in
+ * production it defaults to `document.baseURI`. Regression guard for the
+ * Basic-Auth bug where `fetch()` throws on a URL carrying userinfo.
+ * -------------------------------------------------------------------------- */
+
+Deno.test("resolveAssetUrl: strips credentials inherited from a Basic-Auth base", () => {
+	// The exact field failure: page opened at https://user:pass@host/app/, so the
+	// relative component URL resolves to a credentialed href that fetch() rejects.
+	assertEquals(
+		resolveAssetUrl(
+			"./components/x.html",
+			"https://debugger:asdfasdf@dev.nettle.ai/app/",
+		),
+		"https://dev.nettle.ai/app/components/x.html",
+	);
+});
+
+Deno.test("resolveAssetUrl: no-op for a clean base (the 99% path is unchanged)", () => {
+	assertEquals(
+		resolveAssetUrl("./x.html", "https://host/app/"),
+		"https://host/app/x.html",
+	);
+});
+
+Deno.test("resolveAssetUrl: strips credentials from an absolute URL passed directly", () => {
+	// Stripping happens after resolution, so a caller-supplied credentialed
+	// absolute URL is handled too — not just the baseURI-inheritance case.
+	assertEquals(
+		resolveAssetUrl("https://u:p@host/app/x.html", "https://host/app/"),
+		"https://host/app/x.html",
+	);
+});
+
+Deno.test("resolveAssetUrl: strips username-only userinfo", () => {
+	assertEquals(
+		resolveAssetUrl("./x.html", "https://u@host/app/"),
+		"https://host/app/x.html",
+	);
+});
+
+Deno.test("resolveAssetUrl: canonical key collapses credentialed + clean to one entry", () => {
+	// Why memoization improves: both reach the same dedupe key post-strip, so the
+	// same asset isn't fetched (and its module imported) twice.
+	assertEquals(
+		resolveAssetUrl("./x.html", "https://u:p@host/app/"),
+		resolveAssetUrl("./x.html", "https://host/app/"),
+	);
 });

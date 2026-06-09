@@ -16,7 +16,7 @@ published to JSR + npm.
 ```
 src/vanilla.ts            — the ENTIRE core; read it top-to-bottom
 src/mod.ts                — public entry (re-exports vanilla.ts)
-tests/vanilla.test.ts     — reactive-core tests (Deno, NO DOM)
+tests/vanilla.test.ts     — reactive-core + resolveAssetUrl tests (Deno, NO DOM)
 example/todo.html         — single-file todo app
 example/multi-component/  — same app split into single-file components + props
 docs/DESIGN.md            — rationale & "constitution" (read before changing core)
@@ -47,6 +47,10 @@ scripts/build-npm.ts      — npm dist build
    (`tpl-…`) — the id space is global. Adopted `<style>`s land in `<head>` and are
    **global** (no auto-scoping by design); for encapsulation use native CSS
    `@scope` against a root class the component owns — never add selector-rewriting.
+   Both loaders **strip URL credentials** before fetching (via internal
+   `resolveAssetUrl`) so they survive a credentialed `document.baseURI` behind HTTP
+   Basic Auth (`fetch` throws on `user:pass@`); route any new user-URL `fetch`
+   through `resolveAssetUrl`.
 7. **Stay small.** The core is one readable file (P5). A helper earns its place
    only by removing a _recurring_ sharp edge.
 8. **Derivation vs effect.** A `computed`'s `calc` must be **pure** — read sources,
@@ -65,6 +69,10 @@ scripts/build-npm.ts      — npm dist build
       `mount`, `loadTemplates`, `loadComponent`) are **not** Deno-unit-testable —
       verify by serving the repo and opening an `example/` page over `http://`
       (a static server is assumed; `file://` won't load multi-file examples).
+      Pure seams extracted from them **are** testable, though: `resolveAssetUrl`
+      (the loaders' URL resolver) is exported `@internal` solely so `tests/` can
+      exercise it without a DOM — keep the export, and prefer extracting such logic
+      when fixing a DOM helper.
 
 ## Documentation Index
 

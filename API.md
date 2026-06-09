@@ -288,7 +288,10 @@ mount(track, r.list, createTodoList(props)); // instance
 
 Fetch an HTML fragment and adopt its `<template>`s into the document so
 `fromTemplate(id)` can find them. Idempotent per URL; skips ids already present.
-`url` resolves against the page. Requires a static server.
+`url` resolves against the page. Requires a static server. Tolerates a
+credentialed `document.baseURI` (e.g. behind HTTP Basic Auth as
+`https://user:pass@host/…`) — any `user:pass@` userinfo is stripped before
+fetching, because `fetch` rejects URLs that carry credentials.
 
 **Parameters:**
 
@@ -322,6 +325,11 @@ module's exports (typically the factory). Idempotent per URL.
 (`from "@marianmeres/vanilla"`), and the host page declares an import map (it is
 imported from a `blob:` URL, which only resolves bare specifiers). Requires a
 static server. See [README → Single-file components](./README.md#single-file-components).
+
+Tolerates a credentialed `document.baseURI` (Basic-Auth-behind-a-proxy
+deployments as `https://user:pass@host/…`) — `user:pass@` userinfo is stripped
+before fetching, because `fetch` rejects URLs that carry credentials; the browser
+re-sends the cached credentials itself on same-origin requests, so this is lossless.
 
 **Styles are global; scope them yourself.** Each `<style>` is copied verbatim
 into `<head>`, so component CSS and the page's global sheets (Tailwind, a theme,

@@ -594,6 +594,33 @@ function adoptStyles(doc: Document, src: string): void {
 	});
 }
 
+/**
+ * Resolve `url` against a base (`document.baseURI` by default) into an absolute
+ * href with any embedded **credentials stripped** — the standard way the library
+ * turns a user-supplied URL into a fetchable one.
+ *
+ * `fetch()`'s `Request` constructor throws on a URL whose `username`/`password`
+ * is set, and `new URL(rel, document.baseURI)` produces exactly that when the
+ * page is opened behind HTTP Basic Auth as `https://user:pass@host/…` (the
+ * userinfo is inherited from `baseURI`). The browser re-sends the cached
+ * credentials itself on same-origin requests, so dropping them here is lossless —
+ * and stripped is the only form `fetch` accepts. Stripping after resolution also
+ * canonicalizes the dedupe key, so the same asset reached with and without
+ * credentials collapses to one cache entry instead of being fetched twice.
+ *
+ * `base` is injectable only so the credential-stripping can be unit-tested
+ * without a DOM; production callers pass one argument and resolve against the
+ * page.
+ *
+ * @internal
+ */
+export function resolveAssetUrl(url: string, base: string = document.baseURI): string {
+	const u = new URL(url, base);
+	u.username = "";
+	u.password = "";
+	return u.href;
+}
+
 const _templateLoads = new Map<string, Promise<void>>();
 
 /**
@@ -605,9 +632,12 @@ const _templateLoads = new Map<string, Promise<void>>();
  *
  *     await loadTemplates("./templates/cards.html");
  *     const card = fromTemplate("tpl-card");
+ *
+ * Tolerates a credentialed `document.baseURI` (Basic-Auth-behind-a-proxy
+ * deployments) — userinfo is stripped before fetching, see {@link resolveAssetUrl}.
  */
 export function loadTemplates(url: string): Promise<void> {
-	const abs = new URL(url, document.baseURI).href;
+	const abs = resolveAssetUrl(url);
 	let p = _templateLoads.get(abs);
 	if (!p) {
 		p = fetch(abs)
@@ -667,9 +697,13 @@ const _componentLoads = new Map<string, Promise<Record<string, unknown>>>();
  *
  * Returns the module's exports, or `{}` if the file has no inline module script
  * (templates-only). The first `<script type="module">` is used.
+ *
+ * Tolerates a credentialed `document.baseURI` (e.g. behind HTTP Basic Auth as
+ * `https://user:pass@host/…`): any userinfo is stripped before fetching — see
+ * {@link resolveAssetUrl}.
  */
 export function loadComponent(url: string): Promise<Record<string, unknown>> {
-	const abs = new URL(url, document.baseURI).href;
+	const abs = resolveAssetUrl(url);
 	let p = _componentLoads.get(abs);
 	if (!p) {
 		p = (async () => {
