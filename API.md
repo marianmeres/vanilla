@@ -115,6 +115,9 @@ it matches `[data-ref]`.
 the descendant wins (document order). (For a single-element view you can also
 just use the element directly — `refs(el)[name]` would equal `el`.)
 
+**Scope:** nodes inside a nested `data-scope` root are skipped — see
+[Scope boundary](#scope-boundary-data-scope).
+
 **Example:**
 
 ```ts
@@ -144,6 +147,10 @@ reflection). Three aliases cover the irregular cases:
 The kind is the camelCase DOM name (`readOnly`, not `readonly`). Hyphenated
 **attributes** (`aria-*`, `data-*`) have no matching property — set them via
 [`refs`](#refsroot) + JS.
+
+**Scope:** nodes inside a nested `data-scope` root are skipped — a parent's data
+never leaks into a child component's bindings. See
+[Scope boundary](#scope-boundary-data-scope).
 
 **Parameters:**
 
@@ -242,7 +249,12 @@ See [`example/todo-ssr.html`](./example/todo-ssr.html) for the full pattern
 
 One native listener per event type on `root`. Reads `data-on="event:action"` off
 the event target (via `closest`) and dispatches to `handlers[action]`. Survives
-container re-renders because the listener lives on the stable root.
+container re-renders because the listener lives on the stable root. `root` itself
+is included if it carries `data-on`.
+
+**Scope:** events that bubble out of a nested `data-scope` root are ignored — they
+belong to that root's own `delegate`, so a shared action name never fires twice.
+See [Scope boundary](#scope-boundary-data-scope).
 
 **Parameters:**
 
@@ -425,6 +437,34 @@ function createAddBar({ placeholder, onAdd }) { // value + callback props
 		return { el };
 	});
 }
+```
+
+---
+
+## Scope boundary (`data-scope`)
+
+An element belongs to its nearest ancestor-or-self carrying `data-scope`.
+[`refs`](#refsroot), [`applyBindings`](#applybindingsroot-data) and
+[`delegate`](#delegateroot-handlers) only see elements whose scope is the `root`
+they were given, or lies *outside* it (no scope at all, or a scope above the
+root). A nested component root marked `data-scope`, and everything under it, is
+therefore invisible to the parent's helpers.
+
+- **Opt-in, inert by default.** With no `data-scope` in the tree every element is
+  in scope and the helpers behave exactly as before.
+- **Where to put it.** On a component's template root. The value is optional
+  (`data-scope="dialog"` reads well in devtools and doubles as a CSS
+  `@scope ([data-scope="dialog"])` anchor).
+- **When you need it.** Only for components that mount *inside* other components
+  (a dialog holding tabs). Siblings never collide.
+
+```html
+<template id="tpl-dialog">
+	<dialog data-scope="dialog">
+		<button data-on="click:close">✕</button>
+		<div data-ref="body"></div>
+	</dialog>
+</template>
 ```
 
 ---

@@ -17,6 +17,7 @@ published to JSR + npm.
 src/vanilla.ts            — the ENTIRE core; read it top-to-bottom
 src/mod.ts                — public entry (re-exports vanilla.ts)
 tests/vanilla.test.ts     — reactive-core + resolveAssetUrl tests (Deno, NO DOM)
+tests/view.test.ts        — refs / applyBindings / delegate + data-scope (linkedom DOM)
 example/todo.html         — single-file todo app
 example/multi-component/  — same app split into single-file components + props
 docs/DESIGN.md            — rationale & "constitution" (read before changing core)
@@ -36,6 +37,9 @@ scripts/build-npm.ts      — npm dist build
    the bright line vs. signals.
 4. **HTML lives in HTML.** Never build markup from strings. Clone `<template>`s
    via `fromTemplate`; declare holes/wiring with `data-*` attributes.
+   `data-scope` on a template root marks a **component boundary**: `refs` /
+   `applyBindings` / `delegate` never see into a nested `data-scope` root. Opt-in
+   (no attribute → old behavior); needed only when components nest.
 5. **Components = factories returning views.** Compose with `mount(track, slot,
    factory, props)`. **Props** are the factory's single argument: _value_ /
    _observable_ (data down) / _callback_ (events up). No props framework.
@@ -65,14 +69,16 @@ scripts/build-npm.ts      — npm dist build
       the **feature checklist (§7)**; honor P1–P5.
 - [ ] Match existing patterns in `src/vanilla.ts`.
 - [ ] `deno task test` and `deno check src/` pass.
-- [ ] **DOM/browser helpers** (`fromTemplate`, `delegate`, `applyBindings`,
-      `mount`, `loadTemplates`, `loadComponent`) are **not** Deno-unit-testable —
-      verify by serving the repo and opening an `example/` page over `http://`
+- [ ] **DOM helpers** (`refs`, `applyBindings`, `delegate`) are unit-tested on a
+      lightweight DOM (`linkedom`, dev-only import) in `tests/view.test.ts` —
+      it sets `globalThis.document` because `delegate` scans the document's
+      templates. The **browser-only** ones (`fromTemplate`, `mount`,
+      `loadTemplates`, `loadComponent` — `blob:` URLs, `fetch`, import maps) are
+      verified by serving the repo and opening an `example/` page over `http://`
       (a static server is assumed; `file://` won't load multi-file examples).
-      Pure seams extracted from them **are** testable, though: `resolveAssetUrl`
-      (the loaders' URL resolver) is exported `@internal` solely so `tests/` can
-      exercise it without a DOM — keep the export, and prefer extracting such logic
-      when fixing a DOM helper.
+      Pure seams extracted from them **are** testable: `resolveAssetUrl` is
+      exported `@internal` solely so `tests/` can exercise it — keep the export,
+      and prefer extracting such logic when fixing a browser-only helper.
 
 ## Documentation Index
 

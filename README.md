@@ -164,11 +164,12 @@ document.body.appendChild(view.el);
 view.destroy(); // runs every tracked cleanup + removes el
 ```
 
-| Attribute   | Role                                                 |
-| ----------- | ---------------------------------------------------- |
-| `data-ref`  | "I need this node in JS"                             |
-| `data-bind` | "fill this from data" (any DOM property + 3 aliases) |
-| `data-on`   | "wire this event" (`event:action`)                   |
+| Attribute    | Role                                                     |
+| ------------ | -------------------------------------------------------- |
+| `data-ref`   | "I need this node in JS"                                 |
+| `data-bind`  | "fill this from data" (any DOM property + 3 aliases)     |
+| `data-on`    | "wire this event" (`event:action`)                       |
+| `data-scope` | "this is a component boundary" (see [Nesting](#nesting)) |
 
 `data-bind`'s kind is a **DOM property name**, so `value`, `disabled`, `hidden`,
 `checked`, `title`, `src`, `placeholder`, … all work with no special-casing
@@ -256,6 +257,28 @@ const app = createView((track) => {
 	return { el };
 });
 ```
+
+### Nesting
+
+When a component mounts **inside** another (a dialog holding tabs), mark each
+component's template root with `data-scope`. The three helpers stop at that
+boundary: the parent's `refs` never picks up a child's `data-ref`, `applyBindings`
+never writes into it, and `delegate` ignores events that bubble out of it — so a
+shared name like `close` can't collide. Without `data-scope` nothing changes;
+sibling components (the common case) never needed it.
+
+```html
+<template id="tpl-dialog">
+	<dialog data-scope="dialog">
+		<button data-on="click:close">✕</button>
+		<div data-ref="body"></div>
+		<!-- children mount here, each with its own scope -->
+	</dialog>
+</template>
+```
+
+The attribute value is optional — it reads well in devtools and doubles as a CSS
+`@scope ([data-scope="dialog"])` anchor.
 
 ### Single-file components
 

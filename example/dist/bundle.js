@@ -112,12 +112,16 @@ function fromTemplate(id) {
     if (!first) throw new Error(`Template #${id} has no element content`);
     return first.cloneNode(true);
 }
+function inScope(root, el) {
+    const scope = el.closest("[data-scope]");
+    return !scope || scope === root || !root.contains(scope);
+}
 function refs(root) {
     const map = {};
     const self = root;
     if (self.matches?.("[data-ref]")) map[self.dataset.ref] = self;
     root.querySelectorAll("[data-ref]").forEach((el)=>{
-        map[el.dataset.ref] = el;
+        if (inScope(root, el)) map[el.dataset.ref] = el;
     });
     return map;
 }
@@ -131,7 +135,9 @@ function applyBindings(root, data) {
         ...root.matches?.("[data-bind]") ? [
             root
         ] : [],
-        ...root.querySelectorAll("[data-bind]")
+        ...[
+            ...root.querySelectorAll("[data-bind]")
+        ].filter((el)=>inScope(root, el))
     ];
     targets.forEach((el)=>{
         el.dataset.bind.split(";").forEach((rule)=>{
@@ -182,13 +188,16 @@ function enhance(target, mountFn) {
 function delegate(root, handlers) {
     const seen = new Set();
     const collect = (scope)=>scope.querySelectorAll("[data-on]").forEach((el)=>el.dataset.on.split(";").forEach((r)=>seen.add(r.split(":")[0].trim())));
+    if (root.matches?.("[data-on]")) {
+        root.dataset.on.split(";").forEach((r)=>seen.add(r.split(":")[0].trim()));
+    }
     collect(root);
     document.querySelectorAll("template").forEach((t)=>collect(t.content));
     const unsubs = [];
     seen.forEach((evt)=>{
         const listener = (e)=>{
             const el = e.target?.closest("[data-on]");
-            if (!el || !root.contains(el)) return;
+            if (!el || !root.contains(el) || !inScope(root, el)) return;
             el.dataset.on.split(";").forEach((rule)=>{
                 const [type, action] = rule.split(":").map((s)=>s.trim());
                 if (type === evt && handlers[action]) handlers[action](e, el);
@@ -219,9 +228,15 @@ function adoptStyles(doc, src) {
         document.head.appendChild(clone);
     });
 }
+function resolveAssetUrl(url, base = document.baseURI) {
+    const u = new URL(url, base);
+    u.username = "";
+    u.password = "";
+    return u.href;
+}
 const _templateLoads = new Map();
 function loadTemplates(url) {
-    const abs = new URL(url, document.baseURI).href;
+    const abs = resolveAssetUrl(url);
     let p = _templateLoads.get(abs);
     if (!p) {
         p = fetch(abs).then((r)=>r.text()).then((html)=>adoptTemplates(new DOMParser().parseFromString(html, "text/html")));
@@ -231,7 +246,7 @@ function loadTemplates(url) {
 }
 const _componentLoads = new Map();
 function loadComponent(url) {
-    const abs = new URL(url, document.baseURI).href;
+    const abs = resolveAssetUrl(url);
     let p = _componentLoads.get(abs);
     if (!p) {
         p = (async ()=>{
@@ -267,5 +282,6 @@ export { createView as createView };
 export { enhance as enhance };
 export { delegate as delegate };
 export { mount as mount };
+export { resolveAssetUrl as resolveAssetUrl };
 export { loadTemplates as loadTemplates };
 export { loadComponent as loadComponent };

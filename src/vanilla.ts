@@ -313,17 +313,37 @@ export function fromTemplate<T extends Element = HTMLElement>(id: string): T {
 }
 
 /**
+ * Scope boundary — the one rule that lets components NEST. An element belongs
+ * to its nearest ancestor-or-self carrying `data-scope`. The three view helpers
+ * ({@link refs}, {@link applyBindings}, {@link delegate}) only see elements whose
+ * scope is `root` itself, or lies *outside* `root` (no scope at all, or a scope
+ * above the root). So a nested component root marked `data-scope`, and
+ * everything under it, is invisible to the parent's helpers — its `data-ref`
+ * names and `data-on` actions can't collide with the parent's.
+ *
+ * Opt-in and inert by default: with no `data-scope` in the tree, every element
+ * is in scope and the helpers behave exactly as before. Put the attribute on a
+ * component's template root (a value is optional — `data-scope="dialog"` reads
+ * well in devtools and doubles as a CSS `@scope` anchor).
+ */
+function inScope(root: ParentNode, el: Element): boolean {
+	const scope = el.closest("[data-scope]");
+	return !scope || scope === root || !root.contains(scope);
+}
+
+/**
  * Collect `[data-ref="name"]` nodes into `{ name: el }`. Includes `root` itself
  * if it matches `[data-ref]` — so all three view helpers ({@link refs},
  * {@link applyBindings}, {@link delegate}) see the root. A descendant with the
  * same name shadows the root, since the map is keyed by name in document order.
+ * Nodes inside a nested `data-scope` root are skipped (see {@link inScope}).
  */
 export function refs(root: ParentNode): Record<string, HTMLElement> {
 	const map: Record<string, HTMLElement> = {};
 	const self = root as HTMLElement;
 	if (self.matches?.("[data-ref]")) map[self.dataset.ref!] = self;
 	root.querySelectorAll<HTMLElement>("[data-ref]").forEach((el) => {
-		map[el.dataset.ref!] = el;
+		if (inScope(root, el)) map[el.dataset.ref!] = el;
 	});
 	return map;
 }
@@ -357,11 +377,14 @@ const BIND_ALIAS: Record<string, string> = {
  *
  * Security: `text:` (textContent) is XSS-safe; `html:`/`innerHTML:` are unsafe
  * sinks — use them for **trusted content only**.
+ *
+ * Nodes inside a nested `data-scope` root are skipped (see {@link inScope}) —
+ * a parent's data never leaks into a child component's bindings.
  */
 export function applyBindings(root: Element, data: Record<string, unknown>): void {
 	const targets = [
 		...(root.matches?.("[data-bind]") ? [root] : []),
-		...root.querySelectorAll("[data-bind]"),
+		...[...root.querySelectorAll("[data-bind]")].filter((el) => inScope(root, el)),
 	];
 	targets.forEach((el) => {
 		(el as HTMLElement).dataset.bind!.split(";").forEach((rule) => {
@@ -481,7 +504,12 @@ export function enhance<T extends object = Record<never, never>>(
  * every `<template>` in the document. Rows are cloned from templates and appended
  * later (often with event types absent from `root` at mount — e.g. a checkbox's
  * `"change"`), so a root-only scan would silently drop those events. The
- * `root.contains(el)` guard keeps any extra listener harmless.
+ * `root.contains(el)` guard keeps any extra listener harmless. `root` itself is
+ * included if it carries `data-on`, consistent with {@link refs} / {@link applyBindings}.
+ *
+ * Events from inside a nested `data-scope` root are ignored (see
+ * {@link inScope}): they bubble through this root, but they belong to the nested
+ * component's own `delegate`, so a shared action name never fires twice.
  */
 export function delegate(
 	root: HTMLElement,
@@ -492,13 +520,18 @@ export function delegate(
 		scope.querySelectorAll<HTMLElement>("[data-on]").forEach((el) =>
 			el.dataset.on!.split(";").forEach((r) => seen.add(r.split(":")[0].trim()))
 		);
+	// the root itself may carry data-on (a one-element component); querySelectorAll
+	// is descendants-only, so scan it explicitly — as refs/applyBindings do.
+	if (root.matches?.("[data-on]")) {
+		root.dataset.on!.split(";").forEach((r) => seen.add(r.split(":")[0].trim()));
+	}
 	collect(root);
 	document.querySelectorAll("template").forEach((t) => collect(t.content));
 	const unsubs: Unsubscribe[] = [];
 	seen.forEach((evt) => {
 		const listener = (e: Event) => {
 			const el = (e.target as Element | null)?.closest<HTMLElement>("[data-on]");
-			if (!el || !root.contains(el)) return;
+			if (!el || !root.contains(el) || !inScope(root, el)) return;
 			el.dataset.on!.split(";").forEach((rule) => {
 				const [type, action] = rule.split(":").map((s) => s.trim());
 				if (type === evt && handlers[action]) handlers[action](e, el);
