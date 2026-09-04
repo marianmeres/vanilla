@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>
+			@marianmeres/vanilla — with vanilla-ui (dialog · menu · toast)
+		</title>
+
+		<!--
+			THE IMPORT MAP IS THE WHOLE INTEGRATION.
+
+			  @marianmeres/vanilla    → this repo's LOCAL build (example/dist/bundle.js)
+			  @marianmeres/vanilla-ui → the published kit, off a CDN
+
+			The kit's `mod.js` imports `@marianmeres/vanilla` BY NAME, and so does
+			every component file it loads (each one's inline module is imported from
+			a blob: URL, which resolves bare specifiers through this map — see
+			docs/SINGLE_FILE_COMPONENTS.md). So both arrows land on one file: a
+			single copy of vanilla, one scheduler, shared by the kit's dialogs and
+			by this page's views.
+
+			Serving the kit from a local checkout instead? Point BOTH specifiers at
+			its `dist/mod.js` — that build bundles vanilla in, while the npm one
+			keeps the bare import, which is what lets the map above split them.
+			Either way the components are fetched at runtime from wherever mod.js
+			is served, so there is no build step on this side.
+		-->
+		<script type="importmap">
+			{
+				"imports": {
+					"@marianmeres/vanilla": "./dist/bundle.js",
+					"@marianmeres/vanilla-ui": "https://cdn.jsdelivr.net/npm/@marianmeres/vanilla-ui@0.5/dist/mod.js"
+				}
+			}
+		</script>
+
+		<!--
+			No Tailwind on this page, unlike the other examples — deliberately. The
+			kit paints its controls inside `@layer vui.base`, and an unlayered reset
+			(Tailwind's preflight, Bootstrap Reboot) beats any layer: it would
+			square every button in the dialog. Put a reset in a layer of its own, or
+			leave it off. The page styles below are layout only; the colors read the
+			kit's tokens, so the page follows whatever theme the kit is on.
+		-->
+		<style>
+			/* The kit has no theme file on this page, so it falls back to the
+			   platform's system colors — which follow this one declaration.
+			   (Drop in a design-tokens theme and it follows that instead.) */
+			:root {
+				color-scheme: light dark;
+			}
+			body {
+				margin: 0;
+				font-family: system-ui, sans-serif;
+				background: var(--vui-background, Canvas);
+				color: var(--vui-foreground, CanvasText);
+			}
+			.page {
+				max-width: 46rem;
+				margin: 0 auto;
+				padding: 1.5rem;
+			}
+			h1 {
+				font-size: 1.5rem;
+				margin: 0 0 0.25rem;
+			}
+			.sub {
+				margin: 0 0 1.25rem;
+				color: var(--vui-muted-foreground, GrayText);
+			}
+			.toolbar {
+				margin-bottom: 1rem;
+			}
+			.spacer {
+				margin-inline-start: auto;
+			}
+			/* The control SIZE channel: re-declared here, every control inside the
+			   table (the kit's and yours alike) comes out dense. Same move as a
+			   variant, one element up. */
+			.vui-table {
+				--vui-control-min-height: 2rem;
+				--vui-control-px: 0.6rem;
+			}
+			.actions {
+				display: flex;
+				gap: 0.4rem;
+				justify-content: flex-end;
+			}
+			.help {
+				margin-top: 1.25rem;
+			}
+			.help pre {
+				overflow-x: auto;
+				margin: 0.5rem 0 0;
+				padding: 0.75rem;
+				border-radius: var(--vui-radius, 0.5rem);
+				background: var(--vui-muted, #f4f4f5);
+				font-size: 0.8rem;
+			}
+		</style>
+	</head>
+	<body>
+		<div class="page">
+			<h1>Team</h1>
+			<p class="sub">
+				@marianmeres/vanilla (state + views) ·
+				<a href="https://jsr.io/@marianmeres/vanilla-ui"
+					>@marianmeres/vanilla-ui</a
+				>
+				(dialog · menu · toast · disclosure)
+			</p>
+
+			<!--
+				Ordinary vanilla templates. Note there are no classes on the row's
+				buttons: the kit's base layer paints any control inside an element
+				carrying a `vui-` class, so `.vui-card` below is enough.
+			-->
+			<template id="tpl-app">
+				<div class="vui-card">
+					<div class="vui-row toolbar">
+						<button data-on="click:invite" class="vui-btn--primary">
+							Invite
+						</button>
+						<!-- no click handler: the kit's popover makes this button
+						     the native invoker, so the platform toggles the menu -->
+						<button data-ref="viewBtn"></button>
+						<span data-ref="count" class="vui-badge spacer"></span>
+					</div>
+
+					<table class="vui-table vui-table--zebra">
+						<tbody data-ref="list"></tbody>
+					</table>
+					<p data-ref="empty" class="sub" hidden>Nobody here.</p>
+
+					<div data-ref="help" class="help"></div>
+				</div>
+			</template>
+
+			<template id="tpl-row">
+				<tr>
+					<td data-bind="text:name"></td>
+					<td>
+						<!-- `hidden` is just a DOM property, like any other bind
+						     — and the base layer keeps `[hidden]` winning over
+						     the kit's own `display`, so it works on a badge. -->
+						<span
+							class="vui-badge vui-badge--primary"
+							data-bind="hidden:notAdmin"
+							>admin</span
+						>
+					</td>
+					<td>
+						<div class="actions">
+							<button data-on="click:rename">Rename</button>
+							<button
+								data-on="click:remove"
+								class="vui-btn--ghost"
+							>
+								Remove
+							</button>
+						</div>
+					</td>
+				</tr>
+			</template>
+
+			<!--
+				The dialog body: a plain `<form method="dialog">`. Submitting closes
+				the dialog with the pressed button's `value` — that value is what
+				`onClose` receives, so there is no wiring between the two. Nothing
+				here is classed either; inside the dialog the base layer paints the
+				input, the switch and the buttons.
+			-->
+			<template id="tpl-member-form">
+				<form method="dialog">
+					<div class="vui-field">
+						<label for="member-name">Name</label>
+						<input
+							id="member-name"
+							data-ref="name"
+							name="name"
+							required
+							autofocus
+							placeholder="Ada Lovelace"
+						/>
+						<span class="vui-help"
+							>This list lives in memory — reload and it's
+							back.</span
+						>
+					</div>
+					<label class="vui-row" style="margin-bottom: 1rem">
+						<input
+							type="checkbox"
+							role="switch"
+							data-ref="admin"
+							name="admin"
+						/>
+						<span>Admin</span>
+					</label>
+					<div class="vui-row" style="justify-content: flex-end">
+						<button value="cancel" formnovalidate>Cancel</button>
+						<button
+							value="save"
+							data-ref="submit"
+							class="vui-btn--primary"
+						>
+							Save
+						</button>
+					</div>
+				</form>
+			</template>
+
+			<!-- A menu is markup: bare `<button role="menuitem">`s in a `.vui-menu`.
+			     The kit adds focus, arrow keys, and `onSelect`. -->
+			<template id="tpl-view-menu">
+				<div class="vui-menu">
+					<button role="menuitem" value="all">Everyone</button>
+					<button role="menuitem" value="admin">Admins</button>
+					<button role="menuitem" value="member">Members</button>
+				</div>
+			</template>
+
+			<template id="tpl-help">
+				<div>
+					<p>
+						The state, the store, the list rendering and the event
+						delegation on this page are plain
+						<code>@marianmeres/vanilla</code>. The dialog, the menu,
+						the toasts and this disclosure come from
+						<code>@marianmeres/vanilla-ui</code> — single-file
+						components fetched at runtime, no build step on this
+						side.
+					</p>
+					<p>
+						They meet in one import map, which is the only setup
+						there is:
+					</p>
+					<pre><code>&lt;script type="importmap"&gt;
+{
+  "imports": {
+    "@marianmeres/vanilla": "./dist/bundle.js",
+    "@marianmeres/vanilla-ui": "https://cdn.jsdelivr.net/npm/@marianmeres/vanilla-ui@0.5/dist/mod.js"
+  }
+}
+&lt;/script&gt;</code></pre>
+					<p>
+						Because the kit imports vanilla by name, both specifiers
+						resolve to the same file: one copy of the library, so a
+						kit view is an ordinary vanilla view —
+						<code>mount()</code> tracks its <code>destroy()</code>,
+						and an <code>observable</code> from this page drives it.
+					</p>
+				</div>
+			</template>
+
+			<div id="app"></div>
+		</div>
+
+		<script type="module">
+			import {
+				applyBindings,
+				computed,
+				createView,
+				delegate,
+				fromTemplate,
+				mount,
+				observable,
+				reactTo,
+				refs,
+			} from "@marianmeres/vanilla";
+
+			/* ---- load the kit ------------------------------------------------
+			 * Dynamically, and that is the point: the kit comes off a CDN, and a
+			 * static `import` that cannot be fetched takes the whole module down
+			 * before a line of this runs. A dynamic one is catchable — one await
+			 * for the module, one for all five components (and the base
+			 * stylesheet, fetched over http like everything else here). */
+			let kit, ui;
+			try {
+				kit = await import("@marianmeres/vanilla-ui");
+				ui = await kit.loadAll();
+			} catch (err) {
+				const p = document.createElement("p");
+				p.style.color = "crimson";
+				p.textContent =
+					"Could not load @marianmeres/vanilla-ui (" +
+					err.message +
+					"). This example fetches the kit from a CDN — go online, " +
+					"or point the import map at a local copy.";
+				document.getElementById("app").append(p);
+				throw err;
+			}
+			const { button } = kit;
+			const {
+				createDialog,
+				createDisclosure,
+				createPopover,
+				createToast,
+			} = ui;
+
+			// The import map's payoff, asserted: the kit re-exports the very
+			// module this page imported — one copy of vanilla, one scheduler.
+			console.assert(
+				kit.observable === observable,
+				"two copies of vanilla — check the import map",
+			);
+
+			/* ---- STORE — plain vanilla: observables in, derived values out --- */
+			const store = (() => {
+				let nextId = 4;
+				const members = observable([
+					{ id: 1, name: "Ada Lovelace", admin: true },
+					{ id: 2, name: "Grace Hopper", admin: false },
+					{ id: 3, name: "Alan Turing", admin: false },
+				]);
+				const filter = observable("all");
+				const admins = computed(
+					[members],
+					() => members.get().filter((m) => m.admin).length,
+				);
+
+				return {
+					members,
+					filter,
+					admins,
+					find: (id) => members.get().find((m) => m.id === id),
+					indexOf: (id) =>
+						members.get().findIndex((m) => m.id === id),
+					add: (name, admin) =>
+						members.update((l) => [
+							...l,
+							{ id: nextId++, name, admin },
+						]),
+					patch: (id, values) =>
+						members.update((l) =>
+							l.map((m) =>
+								m.id === id ? { ...m, ...values } : m,
+							),
+						),
+					remove: (id) =>
+						members.update((l) => l.filter((m) => m.id !== id)),
+					insertAt: (member, index) =>
+						members.update((l) => [
+							...l.slice(0, index),
+							member,
+							...l.slice(index),
+						]),
+					visible: () => {
+						const f = filter.get();
+						return members
+							.get()
+							.filter((m) =>
+								f === "all"
+									? true
+									: f === "admin"
+										? m.admin
+										: !m.admin,
+							);
+					},
+				};
+			})();
+
+			/* ---- the toast region: made once, lives for the page ------------- */
+			const toasts = createToast({ position: "bottom-end" });
+
+			const VIEW_LABELS = {
+				all: "Everyone",
+				admin: "Admins",
+				member: "Members",
+			};
+
+			/* ---- THE VIEW ---------------------------------------------------- */
+			const app = createView((track) => {
+				const el = fromTemplate("tpl-app");
+				const r = refs(el);
+				const rowId = (t) => +t.closest("[data-id]").dataset.id;
+
+				track(
+					delegate(el, {
+						invite: () => openMemberDialog(),
+						rename: (e, t) =>
+							openMemberDialog(store.find(rowId(t))),
+						remove: (e, t) => removeWithUndo(rowId(t)),
+					}),
+				);
+
+				/* A kit component, anchored to a button this view owns. `trigger`
+				 * defaults to on, so the button becomes the native popover
+				 * invoker — the platform toggles it and there is no click
+				 * handler above for it. Its items feed a plain observable. */
+				const viewMenu = createPopover({
+					anchor: r.viewBtn,
+					role: "menu",
+					body: fromTemplate("tpl-view-menu"),
+					onSelect: (value) => store.filter.set(value),
+				});
+				// The anchor is not in the document yet (a view's element is
+				// only appended after its mountFn returns) — the popover places
+				// itself after it on the first click.
+				track(viewMenu.destroy);
+
+				/* A kit view IS a vanilla view: mount() appends it and ties its
+				 * destroy() to ours. Its root carries `data-scope`, so the
+				 * delegate above never sees the clicks inside it. */
+				mount(
+					track,
+					r.help,
+					createDisclosure({
+						summary: "How this page is wired",
+						body: fromTemplate("tpl-help"),
+					}),
+				);
+
+				/* LIST: one effect over the two sources that shape it. */
+				track(reactTo([store.members, store.filter], renderList));
+
+				function renderList() {
+					const items = store.visible();
+					r.list.innerHTML = "";
+					for (const m of items) {
+						const row = fromTemplate("tpl-row");
+						row.dataset.id = m.id;
+						applyBindings(row, {
+							name: m.name,
+							notAdmin: !m.admin,
+						});
+						r.list.appendChild(row);
+					}
+					r.empty.hidden = items.length > 0;
+				}
+
+				/* COUNT: reads the computed, not the list. */
+				track(
+					reactTo([store.members, store.admins], () => {
+						const n = store.members.get().length;
+						const a = store.admins.get();
+						r.count.textContent = `${n} ${
+							n === 1 ? "person" : "people"
+						} · ${a} admin${a === 1 ? "" : "s"}`;
+					}),
+				);
+
+				/* The menu button's label follows the filter it sets. */
+				track(
+					store.filter.subscribe((f) => {
+						r.viewBtn.textContent = VIEW_LABELS[f] + " ▾";
+					}),
+				);
+
+				return { el };
+			});
+
+			/* ---- kit surfaces driven by the store ---------------------------- */
+
+			// One dialog per interaction: built, opened, and destroyed by its own
+			// close. `<form method="dialog">` does the rest — the pressed button's
+			// value arrives as the returnValue.
+			function openMemberDialog(member) {
+				const form = fromTemplate("tpl-member-form");
+				const f = refs(form);
+				f.name.value = member?.name ?? "";
+				f.admin.checked = !!member?.admin;
+				f.submit.textContent = member ? "Save" : "Send invite";
+
+				const dlg = createDialog({
+					title: member ? "Edit member" : "Invite someone",
+					body: form,
+					onClose: (returnValue) => {
+						if (returnValue === "save") {
+							const name = f.name.value.trim();
+							const admin = f.admin.checked;
+							if (member) store.patch(member.id, { name, admin });
+							else {
+								store.add(name, admin);
+								toasts.show(`Invited ${name}.`, {
+									variant: "success",
+									icon: "✓",
+								});
+							}
+						}
+						dlg.destroy();
+					},
+				});
+				document.body.append(dlg.el);
+				dlg.open();
+			}
+
+			// A sticky toast carrying its own way out — the undo the clock can't
+			// take away. `button()` is the kit's markup helper, not a component.
+			function removeWithUndo(id) {
+				const member = store.find(id);
+				const index = store.indexOf(id);
+				store.remove(id);
+
+				const toast = toasts.show(`Removed ${member.name}.`, {
+					ttl: 0,
+					action: button("Undo", {
+						onClick: () => {
+							store.insertAt(member, index);
+							toast.dismiss();
+						},
+					}),
+				});
+			}
+
+			document.getElementById("app").appendChild(app.el);
+
+			// expose for console poking
+			globalThis.app = app;
+			globalThis.store = store;
+			globalThis.toasts = toasts;
+		</script>
+	</body>
+</html>

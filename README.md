@@ -338,6 +338,55 @@ The runnable version is in
 [docs/SINGLE_FILE_COMPONENTS.md](./docs/SINGLE_FILE_COMPONENTS.md) for the
 blob-URL + import-map mechanism, explained from the ground up.
 
+## Sister project — `vanilla-ui`
+
+[`@marianmeres/vanilla-ui`](https://jsr.io/@marianmeres/vanilla-ui) is a small kit
+of ready-made primitives built on this library — **dialog / drawer / sheet**,
+**popover / menu / tooltip**, **disclosure**, **tabs**, **toast** — shipped as
+exactly the single-file components described above, loaded the same way at
+runtime. Nothing here depends on it, and it adds no concepts: a kit component is
+just an ordinary view — `mount` tracks its `destroy`, its root carries
+`data-scope`, and your observables drive it.
+
+The setup is one import map, with **both** specifiers pointing at the kit's built
+file — the components' own `import … from "@marianmeres/vanilla"` and your page's
+imports then resolve to a **single copy** of vanilla (one scheduler, one
+everything):
+
+```html
+<script type="importmap">
+{
+	"imports": {
+		"@marianmeres/vanilla": "./vanilla-ui/dist/mod.js",
+		"@marianmeres/vanilla-ui": "./vanilla-ui/dist/mod.js"
+	}
+}
+</script>
+<script type="module">
+	import { fromTemplate, loadAll } from "@marianmeres/vanilla-ui";
+
+	const { createDialog } = await loadAll(); // fetches + adopts every component
+
+	const dlg = createDialog({
+		title: "Sign up",
+		body: fromTemplate("tpl-signup"), // text | element | view
+		onClose: (returnValue) => console.log("closed:", returnValue),
+	});
+	document.body.append(dlg.el);
+	dlg.open();
+</script>
+```
+
+The kit re-exports all of vanilla, so that one import gives you `observable`,
+`createView`, `enhance`, … alongside the loaders. It also installs a base
+stylesheet — reading
+[`@marianmeres/design-tokens`](https://jsr.io/@marianmeres/design-tokens)
+variables, with system-color fallbacks — so bare `<button>`s and `<input>`s
+inside a kit component are painted with no classes on them: a
+`<form method="dialog">` dropped into a dialog body comes out right.
+
+Runnable: [`example/ui-kit.html`](./example/ui-kit.html).
+
 ## Examples
 
 Build the bundle the examples import, then serve the repo and open a file over
@@ -361,6 +410,13 @@ deno task example:watch   # rebuild on change
   [`@marianmeres/design-tokens`](https://jsr.io/@marianmeres/design-tokens) with
   the Bootstrap Reboot bridge. Regenerate the theme CSS with
   `deno run -A example/themes/_generate.ts`.
+- [`example/ui-kit.html`](./example/ui-kit.html) — the same core (store, list
+  rendering, delegation) with
+  [**`@marianmeres/vanilla-ui`**](https://jsr.io/@marianmeres/vanilla-ui) on top: a
+  dialog holding a `<form method="dialog">`, a menu popover feeding an observable,
+  undo toasts, and a disclosure mounted with `mount()`. Its import map keeps
+  `@marianmeres/vanilla` on the local bundle and pulls the kit from a CDN, so this
+  one needs network access.
 
 ## API
 
